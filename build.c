@@ -33,10 +33,12 @@ main() {
     // assert(prb_clearDir(arena, outDir));
 
     Str tccExe = prb_pathJoin(arena, outDir, STR("tcc.exe"));
+    Str tccLib = prb_pathJoin(arena, outDir, STR("tcc.lib"));
 
     // NOTE(khvorov) Compile TCC
     {
         Str libtcc1 = prb_pathJoin(arena, outDir, STR("libtcc1.a"));
+
         // NOTE(khvorov) Run the c2str tool
         {
             Str defs_ = prb_pathJoin(arena, tccDir, STR("tccdefs_.h"));
@@ -63,7 +65,17 @@ main() {
         {
             if (!prb_isFile(arena, tccExe)) {
                 Str in = prb_pathJoin(arena, tccDir, STR("tcc.c"));
-                assert(execCmd(arena, prb_fmt(arena, "clang -DONE_SOURCE=1 -DCONFIG_TRIPLET=\"x86_64-linux-gnu\" -DTCC_TARGET_X86_64 %.*s -o %.*s", LIT(in), LIT(tccExe))));
+                assert(execCmd(arena, prb_fmt(arena, "clang -g -DONE_SOURCE=1 -DCONFIG_TRIPLET=\"x86_64-linux-gnu\" -DTCC_TARGET_X86_64 %.*s -o %.*s", LIT(in), LIT(tccExe))));
+            }
+        }
+
+        // NOTE(khvorov) Compile the main exe but as a library
+        {
+            if (!prb_isFile(arena, tccLib)) {
+                Str in = prb_pathJoin(arena, tccDir, STR("tcc.c"));
+                Str obj = prb_pathJoin(arena, tccDir, STR("tcc.o"));
+                assert(execCmd(arena, prb_fmt(arena, "%.*s -g -c -I%.*s -Dmain=tcc_main -DONE_SOURCE=1 -DCONFIG_TRIPLET=\"x86_64-linux-gnu\" -DTCC_TARGET_X86_64 %.*s -o %.*s", LIT(tccExe), LIT(tccIncludeDir), LIT(in), LIT(obj))));
+                assert(execCmd(arena, prb_fmt(arena, "%.*s -ar rcs %.*s %.*s", LIT(tccExe), LIT(tccLib), LIT(obj))));
             }
         }
 
@@ -89,7 +101,7 @@ main() {
                     Str file = prb_pathJoin(arena, tccLibDir, STR(src[ind]));
                     Str out = prb_replaceExt(arena, file, STR("o"));
                     arrput(allObjs, out);
-                    assert(execCmd(arena, prb_fmt(arena, "%.*s -c -I%.*s %.*s -o %.*s", LIT(tccExe), LIT(tccIncludeDir), LIT(file), LIT(out))));
+                    assert(execCmd(arena, prb_fmt(arena, "%.*s -g -c -I%.*s %.*s -o %.*s", LIT(tccExe), LIT(tccIncludeDir), LIT(file), LIT(out))));
                 }
 
                 Str allObjsStr = prb_stringsJoin(arena, allObjs, arrlen(allObjs), STR(" "));
@@ -100,6 +112,12 @@ main() {
 
     // NOTE(khvorov) Test-run tcc
     {
-        assert(execCmd(arena, prb_fmt(arena, "%.*s -I%.*s -L%.*s %s -o temp.exe", LIT(tccExe), LIT(tccIncludeDir), LIT(outDir), __FILE__)));
+        assert(execCmd(arena, prb_fmt(arena, "%.*s -g -I%.*s -L%.*s %s -o temp.exe", LIT(tccExe), LIT(tccIncludeDir), LIT(outDir), __FILE__)));
+    }
+
+    {
+        Str content = STR("int main() {return 0;}");
+        Str path = prb_pathJoin(arena, rootDir, STR("temp.c"));
+        assert(prb_writeEntireFile(arena, path, content.ptr, content.len));
     }
 }
