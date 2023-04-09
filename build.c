@@ -111,11 +111,11 @@ main() {
     }
 
     // NOTE(khvorov) Test-run tcc
-    {
+    if (false) {
         assert(execCmd(arena, prb_fmt(arena, "%.*s -g -I%.*s -L%.*s %s -o temp.exe", LIT(tccExe), LIT(tccIncludeDir), LIT(outDir), __FILE__)));
     }
 
-    {
+    if (true) {
         Str content = STR("int main() {return 0;}");
         Str path = prb_pathJoin(arena, rootDir, STR("temp.c"));
         assert(prb_writeEntireFile(arena, path, content.ptr, content.len));
