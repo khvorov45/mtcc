@@ -25,20 +25,8 @@ main() {
 
     Str rootDir = prb_getParentDir(arena, STR(__FILE__));
 
-    Str             content = STR("int main() {return 0;}");
+    Str             content = STR("// comment");
     mtcc_Preprocess pp = mtcc_beginPreprocess(PTM(content));
-
-    // while (mtcc_nextPreprocessAction(&tu)) {
-    //     switch (tu.curPreprocessAction.kind) {
-    //         case mtcc_PreprocessActionKind_None: assert(!"unreachable"); break;
-
-    //         case mtcc_PreprocessActionKind_AddFileContent: {
-    //         } break;
-
-    //         case mtcc_PreprocessActionKind_GetAllEntriesInDirRecrusively: {
-    //         } break;
-    //     }
-    // }
 
     return 0;
 }
