@@ -18,15 +18,117 @@ typedef prb_Str   Str;
 typedef uint8_t   u8;
 typedef int32_t   i32;
 
+function void
+test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTokenKind expected) {
+    prb_TempMemory temp = prb_beginTempMemory(arena);
+
+    Str spacesAround[casesCount];
+    for (i32 ind = 0; ind < casesCount; ind++) {
+        spacesAround[ind] = prb_fmt(arena, " %.*s\n", LIT(cases[ind]));
+    }
+
+    for (i32 ind = 0; ind < casesCount; ind++) {
+        Str              input = spacesAround[ind];
+        mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+
+        assert(mtcc_ppTokenIterNext(&iter));
+        assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+        assert(prb_streq(MTP(iter.pptoken.str), STR(" ")));
+
+        assert(mtcc_ppTokenIterNext(&iter));
+        assert(iter.pptoken.kind == expected);
+        assert(prb_streq(MTP(iter.pptoken.str), cases[ind]));
+
+        assert(mtcc_ppTokenIterNext(&iter));
+        assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+        assert(prb_streq(MTP(iter.pptoken.str), STR("\n")));
+
+        assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+    }
+
+    prb_endTempMemory(temp);
+}
+
+function void
+test_ppTokenIter(Arena* arena) {
+    {
+        Str cases[] = {
+            STR("// comment"),
+            STR("// comment // comment"),
+            STR("/* comment */"),
+            STR("// comment \\\ncomment"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_Comment);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Comment);
+    }
+
+    {
+        Str cases[] = {
+            STR("\\\n"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_EscapedNewline);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+    }
+
+    {
+        Str cases[] = {
+            STR(" \n \n \t"),
+            STR("    "),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+    }
+
+    {
+        Str cases[] = {
+            STR("ident"),
+            STR("iDent2"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_Ident);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Ident);
+    }
+}
+
 int
-main() {
+main(void) {
     Arena  arena_ = prb_createArenaFromVmem(1 * prb_GIGABYTE);
     Arena* arena = &arena_;
 
-    Str rootDir = prb_getParentDir(arena, STR(__FILE__));
+    // Str rootDir = prb_getParentDir(arena, STR(__FILE__));
 
-    Str             content = STR("// comment");
-    mtcc_Preprocess pp = mtcc_beginPreprocess(PTM(content));
+    test_ppTokenIter(arena);
 
     return 0;
 }
