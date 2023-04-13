@@ -233,22 +233,36 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             tok.str.len = offset - offsetBefore;
         }
 
-        // NOTE(khvorov) Header name
-        if (iter->state == mtcc_PPTokenIterState_PoundInclude) {
-            if (ch == '"' || ch == '<') {
-                tok.kind = mtcc_PPTokenKind_HeaderName;
-                tok.str.ptr = iter->input.ptr + offset;
-                intptr_t offsetBefore = offset;
-                offset += 1;
-                char searchCh = ch == '"' ? '"' : '>';
-                for (; offset < iter->input.len; offset += 1) {
-                    char nextCh = iter->input.ptr[offset];
-                    if (nextCh == searchCh) {
-                        break;
-                    }
+        // NOTE(khvorov) Char const
+        if (tok.kind == mtcc_PPTokenKind_None && (ch == '\'')) {
+            tok.kind = mtcc_PPTokenKind_CharConst;
+            tok.str.ptr = iter->input.ptr + offset;
+            intptr_t offsetBefore = offset;
+            offset += 1;
+            for (; offset < iter->input.len; offset += 1) {
+                char nextCh = iter->input.ptr[offset];
+                if (nextCh == '\'') {
+                    offset += 1;
+                    break;
                 }
-                tok.str.len = offset - offsetBefore;
             }
+            tok.str.len = offset - offsetBefore;
+        }
+
+        // NOTE(khvorov) Header name
+        if (tok.kind == mtcc_PPTokenKind_None && iter->state == mtcc_PPTokenIterState_PoundInclude && (ch == '"' || ch == '<')) {
+            tok.kind = mtcc_PPTokenKind_HeaderName;
+            tok.str.ptr = iter->input.ptr + offset;
+            intptr_t offsetBefore = offset;
+            offset += 1;
+            char searchCh = ch == '"' ? '"' : '>';
+            for (; offset < iter->input.len; offset += 1) {
+                char nextCh = iter->input.ptr[offset];
+                if (nextCh == searchCh) {
+                    break;
+                }
+            }
+            tok.str.len = offset - offsetBefore;
         }
 
         mtcc_assert(tok.kind != mtcc_PPTokenKind_None);
