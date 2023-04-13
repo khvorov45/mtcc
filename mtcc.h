@@ -234,6 +234,7 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Char const and string lit
+        // TODO(khvorov) Prefixes
         if (tok.kind == mtcc_PPTokenKind_None && (ch == '\'' || (iter->state != mtcc_PPTokenIterState_PoundInclude && ch == '"'))) {
             tok.kind = ch == '"' ? mtcc_PPTokenKind_StrLit : mtcc_PPTokenKind_CharConst;
             tok.str.ptr = iter->input.ptr + offset;
@@ -246,6 +247,112 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
                     break;
                 }
             }
+            tok.str.len = offset - offsetBefore;
+        }
+
+        // NOTE(khvorov) Punctuator
+        if (tok.kind == mtcc_PPTokenKind_None && (ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == '{' || ch == '}' || ch == '.' || ch == '-' || ch == '+' || ch == '&' || ch == '*' || ch == '~' || ch == '!' || ch == '/' || ch == '%' || ch == '<' || ch == '>' || ch == '^' || ch == '|' || ch == '?' || ch == ':' || ch == ';' || ch == '=' || ch == ',' || ch == '#')) {
+            tok.kind = mtcc_PPTokenKind_Punctuator;
+            tok.str.ptr = iter->input.ptr + offset;
+            intptr_t offsetBefore = offset;
+            offset += 1;
+
+            if (offset < iter->input.len) {
+                char nextCh = iter->input.ptr[offset];
+                switch (ch) {
+                    case '-': {
+                        if (nextCh == '>' || nextCh == '-' || nextCh == '=') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    case '+': {
+                        if (nextCh == '+' || nextCh == '=') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    case '<': {
+                        if (nextCh == '<' || nextCh == '=' || nextCh == ':' || nextCh == '%') {
+                            offset += 1;
+                            if (nextCh == '<' && offset < iter->input.len) {
+                                char nextNextCh = iter->input.ptr[offset];
+                                if (nextNextCh == '=') {
+                                    offset += 1;
+                                }
+                            }
+                        }
+                    } break;
+
+                    case '>': {
+                        if (nextCh == '>' || nextCh == '=') {
+                            offset += 1;
+                            if (nextCh == '>' && offset < iter->input.len) {
+                                char nextNextCh = iter->input.ptr[offset];
+                                if (nextNextCh == '=') {
+                                    offset += 1;
+                                }
+                            }
+                        }
+                    } break;
+
+                    case '%': {
+                        if (nextCh == '=' || nextCh == '>' || nextCh == ':') {
+                            offset += 1;
+                            if (nextCh == ':' && offset < iter->input.len) {
+                                char nextNextCh = iter->input.ptr[offset];
+                                if (nextNextCh == '%' && offset < iter->input.len - 1) {
+                                    char nextNextNextCh = iter->input.ptr[offset + 1];
+                                    if (nextNextNextCh == ':') {
+                                        offset += 2;
+                                    }
+                                }
+                            }
+                        }
+                    } break;
+
+                    case '=':
+                    case '!':
+                    case '*':
+                    case '/':
+                    case '&':
+                    case '^': {
+                        if (nextCh == '=') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    case '|': {
+                        if (nextCh == '|' || nextCh == '=') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    case '.': {
+                        if (nextCh == '.' && offset < iter->input.len - 1) {
+                            char nextNextCh = iter->input.ptr[offset + 1];
+                            if (nextNextCh == '.') {
+                                offset += 2;
+                            }
+                        }
+                    } break;
+
+                    case '#': {
+                        if (nextCh == '#') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    case ':': {
+                        if (nextCh == '>') {
+                            offset += 1;
+                        }
+                    } break;
+
+                    default: break;
+                }
+            }
+
             tok.str.len = offset - offsetBefore;
         }
 
@@ -264,6 +371,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             }
             tok.str.len = offset - offsetBefore;
         }
+
+        // TODO(khvorov) Trigraph sequences
 
         mtcc_assert(tok.kind != mtcc_PPTokenKind_None);
 

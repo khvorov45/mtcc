@@ -51,7 +51,6 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTok
 
 function void
 test_ppTokenIter(Arena* arena) {
-
     // NOTE(khvorov) Comment
     {
         Str cases[] = {
@@ -183,6 +182,76 @@ test_ppTokenIter(Arena* arena) {
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_StrLit);
+    }
+
+    // NOTE(khvorov) Punctuator
+    {
+        Str cases[] = {
+            STR("["),
+            STR("]"),
+            STR("("),
+            STR(")"),
+            STR("{"),
+            STR("}"),
+            STR("."),
+            STR("->"),
+            STR("++"),
+            STR("--"),
+            STR("&"),
+            STR("*"),
+            STR("+"),
+            STR("-"),
+            STR("~"),
+            STR("!"),
+            STR("/"),
+            STR("%"),
+            STR("<<"),
+            STR(">>"),
+            STR("<"),
+            STR(">"),
+            STR("<="),
+            STR(">="),
+            STR("=="),
+            STR("!="),
+            STR("^"),
+            STR("|"),
+            STR("||"),
+            STR("?"),
+            STR(":"),
+            STR(";"),
+            STR("..."),
+            STR("="),
+            STR("*="),
+            STR("/="),
+            STR("%="),
+            STR("+="),
+            STR("-="),
+            STR("<<="),
+            STR(">>="),
+            STR("&="),
+            STR("^="),
+            STR("|="),
+            STR(","),
+            STR("#"),
+            STR("##"),
+            STR("<:"),
+            STR(":>"),
+            STR("<%"),
+            STR("%>"),
+            STR("%:"),
+            STR("%:%:"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_Punctuator);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Punctuator);
     }
 }
 
