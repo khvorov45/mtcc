@@ -217,7 +217,22 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             }
             tok.str.len = offset - offsetBefore;
         }
- 
+
+        // NOTE(khvorov) PPNumber
+        if (tok.kind == mtcc_PPTokenKind_None && (ch >= '0' && ch <= '9')) {
+            tok.kind = mtcc_PPTokenKind_PPNumber;
+            tok.str.ptr = iter->input.ptr + offset;
+            intptr_t offsetBefore = offset;
+            offset += 1;
+            for (; offset < iter->input.len; offset += 1) {
+                char nextCh = iter->input.ptr[offset];
+                if (!((nextCh >= 'a' && nextCh <= 'z') || (nextCh >= 'A' && nextCh <= 'Z') || (nextCh >= '0' && nextCh <= '9') || nextCh == '.')) {
+                    break;
+                }
+            }
+            tok.str.len = offset - offsetBefore;
+        }
+
         // NOTE(khvorov) Header name
         if (iter->state == mtcc_PPTokenIterState_PoundInclude) {
             if (ch == '"' || ch == '<') {
@@ -237,6 +252,29 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         mtcc_assert(tok.kind != mtcc_PPTokenKind_None);
+
+        // NOTE(khvorov) State
+        switch (iter->state) {
+            case mtcc_PPTokenIterState_None: {
+                if (tok.kind == mtcc_PPTokenKind_Punctuator && tok.str.len == 0 && tok.str.ptr[0] == '#') {
+                    iter->state = mtcc_PPTokenIterState_Pound;
+                }
+            } break;
+
+            case mtcc_PPTokenIterState_Pound: {
+                if (tok.kind == mtcc_PPTokenKind_Ident && mtcc_streq(tok.str, mtcc_STR("include"))) {
+                    iter->state = mtcc_PPTokenIterState_PoundInclude;
+                } else if (tok.kind != mtcc_PPTokenKind_Comment && tok.kind != mtcc_PPTokenKind_Whitespace && tok.kind != mtcc_PPTokenKind_EscapedNewline) {
+                    iter->state = mtcc_PPTokenIterState_None;
+                }
+            } break;
+
+            case mtcc_PPTokenIterState_PoundInclude: {
+                if (tok.kind != mtcc_PPTokenKind_Comment && tok.kind != mtcc_PPTokenKind_Whitespace && tok.kind != mtcc_PPTokenKind_EscapedNewline) {
+                    iter->state = mtcc_PPTokenIterState_None;
+                }
+            } break;
+        }
 
         iter->offset = offset;
         iter->pptoken = tok;

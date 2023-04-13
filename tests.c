@@ -51,6 +51,8 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTok
 
 function void
 test_ppTokenIter(Arena* arena) {
+
+    // NOTE(khvorov) Comment
     {
         Str cases[] = {
             STR("// comment"),
@@ -71,6 +73,7 @@ test_ppTokenIter(Arena* arena) {
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Comment);
     }
 
+    // NOTE(khvorov) Escaped newline
     {
         Str cases[] = {
             STR("\\\n"),
@@ -86,6 +89,7 @@ test_ppTokenIter(Arena* arena) {
         }
     }
 
+    // NOTE(khvorov) Whitespace
     {
         Str cases[] = {
             STR(" \n \n \t"),
@@ -102,6 +106,7 @@ test_ppTokenIter(Arena* arena) {
         }
     }
 
+    // NOTE(khvorov) Identifier
     {
         Str cases[] = {
             STR("ident"),
@@ -118,6 +123,28 @@ test_ppTokenIter(Arena* arena) {
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Ident);
+    }
+
+    // NOTE(khvorov) PPNumber
+    {
+        Str cases[] = {
+            STR("123"),
+            STR("123.5"),
+            STR("123.5f"),
+            STR("123U"),
+            STR("123l"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_PPNumber);
+            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_PPNumber);
     }
 }
 
