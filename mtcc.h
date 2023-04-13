@@ -233,15 +233,15 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             tok.str.len = offset - offsetBefore;
         }
 
-        // NOTE(khvorov) Char const
-        if (tok.kind == mtcc_PPTokenKind_None && (ch == '\'')) {
-            tok.kind = mtcc_PPTokenKind_CharConst;
+        // NOTE(khvorov) Char const and string lit
+        if (tok.kind == mtcc_PPTokenKind_None && (ch == '\'' || (iter->state != mtcc_PPTokenIterState_PoundInclude && ch == '"'))) {
+            tok.kind = ch == '"' ? mtcc_PPTokenKind_StrLit : mtcc_PPTokenKind_CharConst;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
             for (; offset < iter->input.len; offset += 1) {
                 char nextCh = iter->input.ptr[offset];
-                if (nextCh == '\'') {
+                if (nextCh == ch) {
                     offset += 1;
                     break;
                 }
