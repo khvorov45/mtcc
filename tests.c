@@ -339,12 +339,14 @@ test_ppTokenIter(Arena* arena) {
         };
 
         mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(program));
-        for (i32 ind = 0; mtcc_ppTokenIterNext(&iter); ind++) {
-            assert(ind < prb_arrayCount(expectedTokens));
-            mtcc_PPToken expected = expectedTokens[ind];
+        i32 tokensCount = 0;
+        for (; mtcc_ppTokenIterNext(&iter); tokensCount++) {
+            assert(tokensCount < prb_arrayCount(expectedTokens));
+            mtcc_PPToken expected = expectedTokens[tokensCount];
             assert(iter.pptoken.kind == expected.kind);
             assert(mtcc_streq(iter.pptoken.str, expected.str));
         }
+        assert(tokensCount == prb_arrayCount(expectedTokens));
     }
 }
 
