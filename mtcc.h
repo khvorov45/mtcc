@@ -250,6 +250,23 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             tok.str.len = offset - offsetBefore;
         }
 
+        // NOTE(khvorov) Header name
+        if (tok.kind == mtcc_PPTokenKind_None && iter->state == mtcc_PPTokenIterState_PoundInclude && (ch == '"' || ch == '<')) {
+            tok.kind = mtcc_PPTokenKind_HeaderName;
+            tok.str.ptr = iter->input.ptr + offset;
+            intptr_t offsetBefore = offset;
+            offset += 1;
+            char searchCh = ch == '"' ? '"' : '>';
+            for (; offset < iter->input.len; offset += 1) {
+                char nextCh = iter->input.ptr[offset];
+                if (nextCh == searchCh) {
+                    offset += 1;
+                    break;
+                }
+            }
+            tok.str.len = offset - offsetBefore;
+        }
+
         // NOTE(khvorov) Punctuator
         if (tok.kind == mtcc_PPTokenKind_None && (ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == '{' || ch == '}' || ch == '.' || ch == '-' || ch == '+' || ch == '&' || ch == '*' || ch == '~' || ch == '!' || ch == '/' || ch == '%' || ch == '<' || ch == '>' || ch == '^' || ch == '|' || ch == '?' || ch == ':' || ch == ';' || ch == '=' || ch == ',' || ch == '#')) {
             tok.kind = mtcc_PPTokenKind_Punctuator;
@@ -356,22 +373,6 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
             tok.str.len = offset - offsetBefore;
         }
 
-        // NOTE(khvorov) Header name
-        if (tok.kind == mtcc_PPTokenKind_None && iter->state == mtcc_PPTokenIterState_PoundInclude && (ch == '"' || ch == '<')) {
-            tok.kind = mtcc_PPTokenKind_HeaderName;
-            tok.str.ptr = iter->input.ptr + offset;
-            intptr_t offsetBefore = offset;
-            offset += 1;
-            char searchCh = ch == '"' ? '"' : '>';
-            for (; offset < iter->input.len; offset += 1) {
-                char nextCh = iter->input.ptr[offset];
-                if (nextCh == searchCh) {
-                    break;
-                }
-            }
-            tok.str.len = offset - offsetBefore;
-        }
-
         // TODO(khvorov) Trigraph sequences
 
         mtcc_assert(tok.kind != mtcc_PPTokenKind_None);
@@ -379,7 +380,7 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         // NOTE(khvorov) State
         switch (iter->state) {
             case mtcc_PPTokenIterState_None: {
-                if (tok.kind == mtcc_PPTokenKind_Punctuator && tok.str.len == 0 && tok.str.ptr[0] == '#') {
+                if (tok.kind == mtcc_PPTokenKind_Punctuator && tok.str.len == 1 && tok.str.ptr[0] == '#') {
                     iter->state = mtcc_PPTokenIterState_Pound;
                 }
             } break;

@@ -253,6 +253,28 @@ test_ppTokenIter(Arena* arena) {
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Punctuator);
     }
+
+    // NOTE(khvorov) Header name
+    {
+        Str cases[] = {
+            STR("#include \"header.h\""),
+            STR("#include <header.h>"),
+        };
+
+        for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
+            Str              input = cases[ind];
+            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(mtcc_ppTokenIterNext(&iter));
+            assert(iter.pptoken.kind == mtcc_PPTokenKind_HeaderName);
+            Str headerPath = prb_strSlice(MTP(iter.pptoken.str), 1, iter.pptoken.str.len - 1);
+            assert(prb_streq(headerPath, STR("header.h")));
+            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        }
+    }
+
 }
 
 int
