@@ -5,6 +5,7 @@
 
 #define function static
 #define STR(x) prb_STR(x)
+#define MSTR(x) (mtcc_Str) {x, prb_strlen(x)}
 #define LIT(x) prb_LIT(x)
 #define PTM(x) \
     (mtcc_Str) { x.ptr, x.len }
@@ -275,6 +276,76 @@ test_ppTokenIter(Arena* arena) {
         }
     }
 
+    // NOTE(khvorov) Combined
+    {
+        Str program = STR(
+            "#include \"header.h\"\n"
+            "int main(void) {\n"
+            "    int /*comment*/ x = 0;\n"
+            "    // comment\n"
+            "    int y = x + 1;\n"
+            "    return 0;\n"
+            "}\n"
+        );
+
+        mtcc_PPToken expectedTokens[] = {
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("#")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("include")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_HeaderName, .str = MSTR("\"header.h\"")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("main")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("(")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("void")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(")")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("{")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Comment, .str = MSTR("/*comment*/")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("x")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("=")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("0")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Comment, .str = MSTR("// comment")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("y")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("=")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("x")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("+")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("1")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("return")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("0")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("}")},
+            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
+        };
+
+        mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(program));
+        for (i32 ind = 0; mtcc_ppTokenIterNext(&iter); ind++) {
+            assert(ind < prb_arrayCount(expectedTokens));
+            mtcc_PPToken expected = expectedTokens[ind];
+            assert(iter.pptoken.kind == expected.kind);
+            assert(mtcc_streq(iter.pptoken.str, expected.str));
+        }
+    }
 }
 
 int
