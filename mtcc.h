@@ -9,6 +9,7 @@
 #endif
 
 #include <stdint.h>
+#include <stdalign.h>
 
 #ifndef mtcc_assert
 #define mtcc_assert(x)
@@ -21,9 +22,6 @@
 #ifndef mtcc_PRIVATEAPI
 #define mtcc_PRIVATEAPI static
 #endif
-
-#define mtcc_STR(x) \
-    (mtcc_Str) { x, mtcc_strlen(x) }
 
 typedef enum mtcc_More {
     mtcc_More_No,
@@ -42,6 +40,17 @@ mtcc_memeq(const void* ptr1, const void* ptr2, intptr_t bytes) {
     }
     return result;
 }
+
+mtcc_PRIVATEAPI void
+mtcc_memset(void* ptr1, uint8_t byte, intptr_t bytes) {
+    mtcc_assert(bytes >= 0);
+    for (intptr_t ind = 0; ind < bytes; ind++) {
+        ((uint8_t*)ptr1)[ind] = byte;
+    }
+}
+
+#define mtcc_STR(x) \
+    (mtcc_Str) { x, mtcc_strlen(x) }
 
 typedef struct mtcc_Str {
     const char* ptr;
@@ -70,62 +79,124 @@ mtcc_streq(mtcc_Str str1, mtcc_Str str2) {
     return result;
 }
 
-typedef enum mtcc_PPTokenKind {
-    mtcc_PPTokenKind_None,
-    mtcc_PPTokenKind_Comment,
-    mtcc_PPTokenKind_EscapedNewline,
-    mtcc_PPTokenKind_Whitespace,
-    mtcc_PPTokenKind_HeaderName,
-    mtcc_PPTokenKind_Ident,
-    mtcc_PPTokenKind_PPNumber,
-    mtcc_PPTokenKind_CharConst,
-    mtcc_PPTokenKind_StrLit,
-    mtcc_PPTokenKind_Punctuator,
-    mtcc_PPTokenKind_Other,
-} mtcc_PPTokenKind;
+typedef struct mtcc_Bytes {
+    uint8_t* ptr;
+    intptr_t len;
+} mtcc_Bytes;
 
-typedef struct mtcc_PPToken {
-    mtcc_PPTokenKind kind;
-    mtcc_Str         str;
-} mtcc_PPToken;
+typedef struct mtcc_Arena {
+    void*    base;
+    intptr_t size;
+    intptr_t used;
+} mtcc_Arena;
 
-typedef enum mtcc_PPTokenIterState {
-    mtcc_PPTokenIterState_None,
-    mtcc_PPTokenIterState_Pound,
-    mtcc_PPTokenIterState_PoundInclude,
-} mtcc_PPTokenIterState;
+mtcc_PRIVATEAPI mtcc_Arena
+mtcc_arenaFromBytes(mtcc_Bytes bytes) {
+    mtcc_Arena arena = {.base = bytes.ptr, .size = bytes.len};
+    return arena;
+}
 
-typedef struct mtcc_PPTokenIter {
-    mtcc_Str              input;
-    intptr_t              offset;
-    mtcc_PPToken          pptoken;
-    mtcc_PPTokenIterState state;
-} mtcc_PPTokenIter;
+mtcc_PRIVATEAPI void*
+mtcc_arenaFreePtr(mtcc_Arena* arena) {
+    void* result = (uint8_t*)arena->base + arena->used;
+    return result;
+}
 
-mtcc_PUBLICAPI mtcc_PPTokenIter
+mtcc_PRIVATEAPI intptr_t
+mtcc_arenaFreeSize(mtcc_Arena* arena) {
+    intptr_t result = arena->size - arena->used;
+    return result;
+}
+
+mtcc_PUBLICAPI intptr_t
+mtcc_getOffsetForAlignment(void* ptr, intptr_t align) {
+    mtcc_assert(((align > 0) && ((align & (align - 1)) == 0)));
+    uintptr_t ptrAligned = (uintptr_t)((uint8_t*)ptr + (align - 1)) & (uintptr_t)(~(align - 1));
+    mtcc_assert(ptrAligned >= (uintptr_t)ptr);
+    intptr_t diff = (intptr_t)(ptrAligned - (uintptr_t)ptr);
+    mtcc_assert(diff < align && diff >= 0);
+    return (intptr_t)diff;
+}
+
+mtcc_PRIVATEAPI void
+mtcc_arenaChangeUsed(mtcc_Arena* arena, intptr_t byteDelta) {
+    mtcc_assert(mtcc_arenaFreeSize(arena) >= byteDelta);
+    arena->used += byteDelta;
+}
+
+mtcc_PRIVATEAPI void
+mtcc_arenaAlignFreePtr(mtcc_Arena* arena, intptr_t align) {
+    intptr_t offset = mtcc_getOffsetForAlignment(mtcc_arenaFreePtr(arena), align);
+    mtcc_arenaChangeUsed(arena, offset);
+}
+
+#define mtcc_arenaAllocStruct(arena, type) (type*)mtcc_arenaAllocAndZero(arena, sizeof(type), alignof(type))
+
+mtcc_PRIVATEAPI void*
+mtcc_arenaAllocAndZero(mtcc_Arena* arena, intptr_t size, intptr_t align) {
+    mtcc_arenaAlignFreePtr(arena, align);
+    void* result = mtcc_arenaFreePtr(arena);
+    mtcc_arenaChangeUsed(arena, size);
+    mtcc_memset(result, 0, (size_t)size);
+    return result;
+}
+
+typedef enum mtcc_TokenKind {
+    mtcc_TokenKind_None,
+    mtcc_TokenKind_Comment,
+    mtcc_TokenKind_EscapedNewline,
+    mtcc_TokenKind_Whitespace,
+    mtcc_TokenKind_HeaderName,
+    mtcc_TokenKind_Ident,
+    mtcc_TokenKind_PPNumber,
+    mtcc_TokenKind_CharConst,
+    mtcc_TokenKind_StrLit,
+    mtcc_TokenKind_Punctuator,
+    mtcc_TokenKind_Other,
+} mtcc_TokenKind;
+
+typedef struct mtcc_Token {
+    mtcc_TokenKind kind;
+    mtcc_Str       str;
+} mtcc_Token;
+
+typedef enum mtcc_TokenIterState {
+    mtcc_TokenIterState_None,
+    mtcc_TokenIterState_Pound,
+    mtcc_TokenIterState_PoundInclude,
+} mtcc_TokenIterState;
+
+typedef struct mtcc_TokenIter {
+    mtcc_Str            input;
+    intptr_t            offset;
+    mtcc_Token          pptoken;
+    mtcc_TokenIterState state;
+} mtcc_TokenIter;
+
+mtcc_PUBLICAPI mtcc_TokenIter
 mtcc_createPPTokenIter(mtcc_Str input) {
-    mtcc_PPTokenIter iter = {.input = input};
+    mtcc_TokenIter iter = {.input = input};
     return iter;
 }
 
 mtcc_PUBLICAPI mtcc_More
-mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
+mtcc_ppTokenIterNext(mtcc_TokenIter* iter) {
     mtcc_More result = mtcc_More_No;
 
     if (iter->offset < iter->input.len) {
         result = mtcc_More_Yes;
 
-        intptr_t     offset = iter->offset;
-        mtcc_PPToken tok = {};
+        intptr_t   offset = iter->offset;
+        mtcc_Token tok = {};
 
         char ch = iter->input.ptr[offset];
 
         // NOTE(khvorov) Comment
-        if (tok.kind == mtcc_PPTokenKind_None && ch == '/' && offset < iter->input.len - 1) {
+        if (tok.kind == mtcc_TokenKind_None && ch == '/' && offset < iter->input.len - 1) {
             char nextCh = iter->input.ptr[offset + 1];
             switch (nextCh) {
                 case '*': {
-                    tok.kind = mtcc_PPTokenKind_Comment;
+                    tok.kind = mtcc_TokenKind_Comment;
                     tok.str.ptr = iter->input.ptr + offset;
                     intptr_t offsetBefore = offset;
                     offset += 2;
@@ -145,7 +216,7 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
                 } break;
 
                 case '/': {
-                    tok.kind = mtcc_PPTokenKind_Comment;
+                    tok.kind = mtcc_TokenKind_Comment;
                     tok.str.ptr = iter->input.ptr + offset;
                     intptr_t offsetBefore = offset;
                     offset += 2;
@@ -167,11 +238,11 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Escaped newlines
-        if (tok.kind == mtcc_PPTokenKind_None && ch == '\\' && offset < iter->input.len - 1) {
+        if (tok.kind == mtcc_TokenKind_None && ch == '\\' && offset < iter->input.len - 1) {
             for (intptr_t aheadInd = offset + 1; aheadInd < iter->input.len; aheadInd++) {
                 char aheadCh = iter->input.ptr[aheadInd];
                 if (aheadCh == '\r' || aheadCh == '\n') {
-                    tok.kind = mtcc_PPTokenKind_EscapedNewline;
+                    tok.kind = mtcc_TokenKind_EscapedNewline;
                     tok.str.ptr = iter->input.ptr + offset;
                     tok.str.len = aheadInd - offset + 1;
                     offset = aheadInd + 1;
@@ -189,8 +260,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Whitespace
-        if (tok.kind == mtcc_PPTokenKind_None && mtcc_isspace(ch)) {
-            tok.kind = mtcc_PPTokenKind_Whitespace;
+        if (tok.kind == mtcc_TokenKind_None && mtcc_isspace(ch)) {
+            tok.kind = mtcc_TokenKind_Whitespace;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -204,8 +275,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Identifier
-        if (tok.kind == mtcc_PPTokenKind_None && ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch == '_'))) {
-            tok.kind = mtcc_PPTokenKind_Ident;
+        if (tok.kind == mtcc_TokenKind_None && ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch == '_'))) {
+            tok.kind = mtcc_TokenKind_Ident;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -219,8 +290,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) PPNumber
-        if (tok.kind == mtcc_PPTokenKind_None && (ch >= '0' && ch <= '9')) {
-            tok.kind = mtcc_PPTokenKind_PPNumber;
+        if (tok.kind == mtcc_TokenKind_None && (ch >= '0' && ch <= '9')) {
+            tok.kind = mtcc_TokenKind_PPNumber;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -235,8 +306,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
 
         // NOTE(khvorov) Char const and string lit
         // TODO(khvorov) Prefixes
-        if (tok.kind == mtcc_PPTokenKind_None && (ch == '\'' || (iter->state != mtcc_PPTokenIterState_PoundInclude && ch == '"'))) {
-            tok.kind = ch == '"' ? mtcc_PPTokenKind_StrLit : mtcc_PPTokenKind_CharConst;
+        if (tok.kind == mtcc_TokenKind_None && (ch == '\'' || (iter->state != mtcc_TokenIterState_PoundInclude && ch == '"'))) {
+            tok.kind = ch == '"' ? mtcc_TokenKind_StrLit : mtcc_TokenKind_CharConst;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -251,8 +322,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Header name
-        if (tok.kind == mtcc_PPTokenKind_None && iter->state == mtcc_PPTokenIterState_PoundInclude && (ch == '"' || ch == '<')) {
-            tok.kind = mtcc_PPTokenKind_HeaderName;
+        if (tok.kind == mtcc_TokenKind_None && iter->state == mtcc_TokenIterState_PoundInclude && (ch == '"' || ch == '<')) {
+            tok.kind = mtcc_TokenKind_HeaderName;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -268,8 +339,8 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
         }
 
         // NOTE(khvorov) Punctuator
-        if (tok.kind == mtcc_PPTokenKind_None && (ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == '{' || ch == '}' || ch == '.' || ch == '-' || ch == '+' || ch == '&' || ch == '*' || ch == '~' || ch == '!' || ch == '/' || ch == '%' || ch == '<' || ch == '>' || ch == '^' || ch == '|' || ch == '?' || ch == ':' || ch == ';' || ch == '=' || ch == ',' || ch == '#')) {
-            tok.kind = mtcc_PPTokenKind_Punctuator;
+        if (tok.kind == mtcc_TokenKind_None && (ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == '{' || ch == '}' || ch == '.' || ch == '-' || ch == '+' || ch == '&' || ch == '*' || ch == '~' || ch == '!' || ch == '/' || ch == '%' || ch == '<' || ch == '>' || ch == '^' || ch == '|' || ch == '?' || ch == ':' || ch == ';' || ch == '=' || ch == ',' || ch == '#')) {
+            tok.kind = mtcc_TokenKind_Punctuator;
             tok.str.ptr = iter->input.ptr + offset;
             intptr_t offsetBefore = offset;
             offset += 1;
@@ -375,27 +446,27 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
 
         // TODO(khvorov) Trigraph sequences
 
-        mtcc_assert(tok.kind != mtcc_PPTokenKind_None);
+        mtcc_assert(tok.kind != mtcc_TokenKind_None);
 
         // NOTE(khvorov) State
         switch (iter->state) {
-            case mtcc_PPTokenIterState_None: {
-                if (tok.kind == mtcc_PPTokenKind_Punctuator && tok.str.len == 1 && tok.str.ptr[0] == '#') {
-                    iter->state = mtcc_PPTokenIterState_Pound;
+            case mtcc_TokenIterState_None: {
+                if (tok.kind == mtcc_TokenKind_Punctuator && tok.str.len == 1 && tok.str.ptr[0] == '#') {
+                    iter->state = mtcc_TokenIterState_Pound;
                 }
             } break;
 
-            case mtcc_PPTokenIterState_Pound: {
-                if (tok.kind == mtcc_PPTokenKind_Ident && mtcc_streq(tok.str, mtcc_STR("include"))) {
-                    iter->state = mtcc_PPTokenIterState_PoundInclude;
-                } else if (tok.kind != mtcc_PPTokenKind_Comment && tok.kind != mtcc_PPTokenKind_Whitespace && tok.kind != mtcc_PPTokenKind_EscapedNewline) {
-                    iter->state = mtcc_PPTokenIterState_None;
+            case mtcc_TokenIterState_Pound: {
+                if (tok.kind == mtcc_TokenKind_Ident && mtcc_streq(tok.str, mtcc_STR("include"))) {
+                    iter->state = mtcc_TokenIterState_PoundInclude;
+                } else if (tok.kind != mtcc_TokenKind_Comment && tok.kind != mtcc_TokenKind_Whitespace && tok.kind != mtcc_TokenKind_EscapedNewline) {
+                    iter->state = mtcc_TokenIterState_None;
                 }
             } break;
 
-            case mtcc_PPTokenIterState_PoundInclude: {
-                if (tok.kind != mtcc_PPTokenKind_Comment && tok.kind != mtcc_PPTokenKind_Whitespace && tok.kind != mtcc_PPTokenKind_EscapedNewline) {
-                    iter->state = mtcc_PPTokenIterState_None;
+            case mtcc_TokenIterState_PoundInclude: {
+                if (tok.kind != mtcc_TokenKind_Comment && tok.kind != mtcc_TokenKind_Whitespace && tok.kind != mtcc_TokenKind_EscapedNewline) {
+                    iter->state = mtcc_TokenIterState_None;
                 }
             } break;
         }
@@ -405,6 +476,113 @@ mtcc_ppTokenIterNext(mtcc_PPTokenIter* iter) {
     }
 
     return result;
+}
+
+typedef enum mtcc_ASTNodeKind {
+    mtcc_ASTNodeKind_TU,
+    mtcc_ASTNodeKind_PPDirective,
+    mtcc_ASTNodeKind_Token,
+} mtcc_ASTNodeKind;
+
+typedef struct mtcc_ASTNode mtcc_ASTNode;
+typedef struct mtcc_ASTNode {
+    mtcc_ASTNodeKind kind;
+    mtcc_ASTNode*    parent;
+    mtcc_ASTNode*    child;
+    mtcc_ASTNode*    sibling;
+    mtcc_Token       token;
+} mtcc_ASTNode;
+
+typedef struct mtcc_AST {
+    mtcc_ASTNode* root;
+} mtcc_AST;
+
+typedef struct mtcc_ASTBuilder {
+    mtcc_AST      ast;
+    mtcc_ASTNode* node;
+    mtcc_Arena    output;
+} mtcc_ASTBuilder;
+
+mtcc_PRIVATEAPI void
+mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
+    mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->parent = astb->node;
+    astb->node->child = node;
+    astb->node = node;
+}
+
+mtcc_PRIVATEAPI void
+mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
+    mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->parent = astb->node->parent;
+    astb->node->sibling = node;
+    astb->node = node;
+}
+
+mtcc_PUBLICAPI mtcc_ASTBuilder
+mtcc_createASTBuilder(mtcc_Bytes output) {
+    mtcc_ASTBuilder astb = {.output = mtcc_arenaFromBytes(output)};
+    astb.node = mtcc_arenaAllocStruct(&astb.output, mtcc_ASTNode);
+    astb.ast.root = astb.node;
+    return astb;
+}
+
+mtcc_PUBLICAPI void
+mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
+    mtcc_ASTNode* before = astb->node;
+    switch (astb->node->kind) {
+        case mtcc_ASTNodeKind_TU: {
+            switch (token.kind) {
+                case mtcc_TokenKind_Punctuator: {
+                    if (token.str.len == 1 && token.str.ptr[0] == '#') {
+                        mtcc_astBuilderPushChild(astb);
+                        astb->node->kind = mtcc_ASTNodeKind_PPDirective;
+                        mtcc_astBuilderPushChild(astb);
+                        astb->node->kind = mtcc_ASTNodeKind_Token;
+                        astb->node->token = token;
+                    }
+                } break;
+                default: break;
+            }
+        } break;
+
+        case mtcc_ASTNodeKind_Token: {
+            mtcc_assert(astb->node->parent);
+            switch (astb->node->parent->kind) {
+                case mtcc_ASTNodeKind_PPDirective: {
+                    // TODO(khvorov) Should this be a separate token?
+                    bool unescapedNewline = false;
+                    if (token.kind == mtcc_TokenKind_Whitespace) {
+                        for (intptr_t ind = 0; ind < token.str.len; ind++) {
+                            char ch = token.str.ptr[ind];
+                            if (ch == '\n' || ch == '\r') {
+                                unescapedNewline = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (unescapedNewline) {
+                        astb->node = astb->node->parent;
+                        mtcc_astBuilderPushSibling(astb);
+                        astb->node->kind = mtcc_ASTNodeKind_Token;
+                        astb->node->token = token;
+                        astb->node = astb->node->parent;
+                    }
+                }
+
+                default: break;
+            }
+        } break;
+
+        case mtcc_ASTNodeKind_PPDirective: mtcc_assert(!"unreachable"); break;
+    }
+
+    if (before == astb->node) {
+        mtcc_astBuilderPushSibling(astb);
+        astb->node->kind = mtcc_ASTNodeKind_Token;
+        astb->node->token = token;
+    }
 }
 
 #ifdef __GNUC__

@@ -5,7 +5,8 @@
 
 #define function static
 #define STR(x) prb_STR(x)
-#define MSTR(x) (mtcc_Str) {x, prb_strlen(x)}
+#define MSTR(x) \
+    (mtcc_Str) { x, prb_strlen(x) }
 #define LIT(x) prb_LIT(x)
 #define PTM(x) \
     (mtcc_Str) { x.ptr, x.len }
@@ -20,7 +21,7 @@ typedef uint8_t   u8;
 typedef int32_t   i32;
 
 function void
-test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTokenKind expected) {
+test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_TokenKind expected) {
     prb_TempMemory temp = prb_beginTempMemory(arena);
 
     Str spacesAround[casesCount];
@@ -29,11 +30,11 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTok
     }
 
     for (i32 ind = 0; ind < casesCount; ind++) {
-        Str              input = spacesAround[ind];
-        mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+        Str            input = spacesAround[ind];
+        mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
 
         assert(mtcc_ppTokenIterNext(&iter));
-        assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+        assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
         assert(prb_streq(MTP(iter.pptoken.str), STR(" ")));
 
         assert(mtcc_ppTokenIterNext(&iter));
@@ -41,7 +42,7 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTok
         assert(prb_streq(MTP(iter.pptoken.str), cases[ind]));
 
         assert(mtcc_ppTokenIterNext(&iter));
-        assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+        assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
         assert(prb_streq(MTP(iter.pptoken.str), STR("\n")));
 
         assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
@@ -51,7 +52,7 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_PPTok
 }
 
 function void
-test_ppTokenIter(Arena* arena) {
+test_tokenIter(Arena* arena) {
     // NOTE(khvorov) Comment
     {
         Str cases[] = {
@@ -62,15 +63,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_Comment);
+            assert(iter.pptoken.kind == mtcc_TokenKind_Comment);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Comment);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Comment);
     }
 
     // NOTE(khvorov) Escaped newline
@@ -80,10 +81,10 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_EscapedNewline);
+            assert(iter.pptoken.kind == mtcc_TokenKind_EscapedNewline);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
@@ -97,10 +98,10 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_Whitespace);
+            assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
@@ -114,15 +115,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_Ident);
+            assert(iter.pptoken.kind == mtcc_TokenKind_Ident);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Ident);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Ident);
     }
 
     // NOTE(khvorov) PPNumber
@@ -136,15 +137,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_PPNumber);
+            assert(iter.pptoken.kind == mtcc_TokenKind_PPNumber);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_PPNumber);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_PPNumber);
     }
 
     // NOTE(khvorov) Char const
@@ -155,15 +156,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_CharConst);
+            assert(iter.pptoken.kind == mtcc_TokenKind_CharConst);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_CharConst);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_CharConst);
     }
 
     // NOTE(khvorov) String lit
@@ -174,15 +175,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_StrLit);
+            assert(iter.pptoken.kind == mtcc_TokenKind_StrLit);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_StrLit);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_StrLit);
     }
 
     // NOTE(khvorov) Punctuator
@@ -244,15 +245,15 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_Punctuator);
+            assert(iter.pptoken.kind == mtcc_TokenKind_Punctuator);
             assert(prb_streq(MTP(iter.pptoken.str), input));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_PPTokenKind_Punctuator);
+        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Punctuator);
     }
 
     // NOTE(khvorov) Header name
@@ -263,13 +264,13 @@ test_ppTokenIter(Arena* arena) {
         };
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
-            Str              input = cases[ind];
-            mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(input));
+            Str            input = cases[ind];
+            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
             assert(mtcc_ppTokenIterNext(&iter));
             assert(mtcc_ppTokenIterNext(&iter));
             assert(mtcc_ppTokenIterNext(&iter));
             assert(mtcc_ppTokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_PPTokenKind_HeaderName);
+            assert(iter.pptoken.kind == mtcc_TokenKind_HeaderName);
             Str headerPath = prb_strSlice(MTP(iter.pptoken.str), 1, iter.pptoken.str.len - 1);
             assert(prb_streq(headerPath, STR("header.h")));
             assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
@@ -288,65 +289,87 @@ test_ppTokenIter(Arena* arena) {
             "}\n"
         );
 
-        mtcc_PPToken expectedTokens[] = {
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("#")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("include")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_HeaderName, .str = MSTR("\"header.h\"")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("main")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("(")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("void")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(")")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("{")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Comment, .str = MSTR("/*comment*/")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("x")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("=")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("0")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Comment, .str = MSTR("// comment")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("int")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("y")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("=")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("x")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("+")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("1")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n    ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Ident, .str = MSTR("return")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR(" ")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_PPNumber, .str = MSTR("0")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR(";")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Punctuator, .str = MSTR("}")},
-            (mtcc_PPToken) {.kind = mtcc_PPTokenKind_Whitespace, .str = MSTR("\n")},
+        mtcc_Token expectedTokens[] = {
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("#")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("include")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_HeaderName, .str = MSTR("\"header.h\"")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("int")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("main")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("(")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("void")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR(")")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("{")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("int")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Comment, .str = MSTR("/*comment*/")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("x")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("=")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_PPNumber, .str = MSTR("0")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Comment, .str = MSTR("// comment")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("int")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("y")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("=")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("x")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("+")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_PPNumber, .str = MSTR("1")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n    ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Ident, .str = MSTR("return")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR(" ")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_PPNumber, .str = MSTR("0")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR(";")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Punctuator, .str = MSTR("}")},
+            (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n")},
         };
 
-        mtcc_PPTokenIter iter = mtcc_createPPTokenIter(PTM(program));
-        i32 tokensCount = 0;
+        mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(program));
+        i32            tokensCount = 0;
         for (; mtcc_ppTokenIterNext(&iter); tokensCount++) {
             assert(tokensCount < prb_arrayCount(expectedTokens));
-            mtcc_PPToken expected = expectedTokens[tokensCount];
+            mtcc_Token expected = expectedTokens[tokensCount];
             assert(iter.pptoken.kind == expected.kind);
             assert(mtcc_streq(iter.pptoken.str, expected.str));
         }
         assert(tokensCount == prb_arrayCount(expectedTokens));
+    }
+}
+
+function void
+test_ast(Arena* arena) {
+    {
+        Str program = STR(
+            "#include \"header.h\"\n"
+            // "int func1() {}\n"
+            // "int func2() {}\n"
+            // "int func3() {}\n"
+            // "int func4() {}\n"
+        );
+
+        mtcc_TokenIter  iter = mtcc_createPPTokenIter(PTM(program));
+        mtcc_ASTBuilder astb = mtcc_createASTBuilder((mtcc_Bytes) {prb_arenaFreePtr(arena), prb_arenaFreeSize(arena)});
+
+        for (; mtcc_ppTokenIterNext(&iter);) {
+            mtcc_astBuilderNext(&astb, iter.pptoken);
+        }
+
+        prb_arenaChangeUsed(arena, astb.output.used);
     }
 }
 
@@ -357,7 +380,8 @@ main(void) {
 
     // Str rootDir = prb_getParentDir(arena, STR(__FILE__));
 
-    test_ppTokenIter(arena);
+    test_tokenIter(arena);
+    test_ast(arena);
 
     return 0;
 }
