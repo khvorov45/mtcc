@@ -489,6 +489,7 @@ typedef struct mtcc_ASTNode {
     mtcc_ASTNodeKind kind;
     mtcc_ASTNode*    parent;
     mtcc_ASTNode*    child;
+    mtcc_ASTNode*    lastChild;
     mtcc_ASTNode*    sibling;
     mtcc_Token       token;
 } mtcc_ASTNode;
@@ -506,26 +507,27 @@ typedef struct mtcc_ASTBuilder {
 mtcc_PRIVATEAPI void
 mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    mtcc_assert(astb->node);
     node->parent = astb->node;
     if (astb->node->child) {
-        // TODO(khvorov) Find a better way than traversing every time
-        for (mtcc_ASTNode* child = astb->node->child;; child = child->sibling) {
-            if (!child->sibling) {
-                child->sibling = node;
-                break;
-            }
-        }
+        mtcc_assert(astb->node->lastChild);
+        astb->node->lastChild->sibling = node;
     } else {
         astb->node->child = node;
     }
+    astb->node->lastChild = node;
     astb->node = node;
 }
 
 mtcc_PRIVATEAPI void
 mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    mtcc_assert(astb->node);
     node->parent = astb->node->parent;
+    mtcc_assert(node->parent);
+    mtcc_assert(!astb->node->sibling);
     astb->node->sibling = node;
+    node->parent->lastChild = node;
     astb->node = node;
 }
 
