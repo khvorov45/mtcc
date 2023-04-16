@@ -165,7 +165,7 @@ for (prb_Iter iter = prb_createIter(); prb_iterNext(&iter) == prb_Success;) {
 // clang-format off
 
 #define prb_STR(x) (prb_Str) {x, prb_strlen(x)}
-#define prb_LIT(x) (x).len, (x).ptr
+#define prb_LIT(x) (int)(x).len, (x).ptr
 
 // Taken from portable snippets
 // https://github.com/nemequ/portable-snippets/blob/master/debug-trap/debug-trap.h

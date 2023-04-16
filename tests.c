@@ -19,6 +19,30 @@ typedef prb_Bytes Bytes;
 typedef prb_Str   Str;
 typedef uint8_t   u8;
 typedef int32_t   i32;
+typedef intptr_t  isize;
+
+Str globalRootDir = {};
+
+function prb_Status
+execCmd(Arena* arena, Str cmd) {
+    prb_writelnToStdout(arena, cmd);
+    prb_Process proc = prb_createProcess(cmd, (prb_ProcessSpec) {});
+    prb_Status  result = prb_launchProcesses(arena, &proc, 1, prb_Background_No);
+    return result;
+}
+
+function void
+addEscapedStr(prb_GrowingStr* gstr, mtcc_Str str) {
+    for (isize ind = 0; ind < str.len; ind++) {
+        char ch = str.ptr[ind];
+        switch (ch) {
+            case ' ': prb_addStrSegment(gstr, "\\\\s"); break;
+            case '\n': prb_addStrSegment(gstr, "\\\\n"); break;
+            case '"': prb_addStrSegment(gstr, "\\\""); break;
+            default: prb_addStrSegment(gstr, "%c", ch); break;
+        }
+    }
+}
 
 function void
 test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_TokenKind expected) {
@@ -355,7 +379,8 @@ function void
 test_ast(Arena* arena) {
     {
         Str program = STR(
-            "#include \"header.h\"\n"
+            "#include \"header1.h\"\n"
+            "#include <header2.h>\n"
             // "int func1() {}\n"
             // "int func2() {}\n"
             // "int func3() {}\n"
@@ -370,6 +395,74 @@ test_ast(Arena* arena) {
         }
 
         prb_arenaChangeUsed(arena, astb.output.used);
+
+        // NOTE(khvorov) Visualize the tree
+        {
+            prb_Arena      gstrArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
+            prb_GrowingStr gstr = prb_beginStr(&gstrArena);
+            prb_addStrSegment(&gstr, "digraph {\n");
+
+            mtcc_ASTNode** nodes = 0;
+            arrput(nodes, astb.ast.root);
+
+            Str* parentNames = 0;
+
+            for (i32 nodeIndex = 0; arrlen(nodes) > 0; nodeIndex++) {
+                mtcc_ASTNode* node = arrpop(nodes);
+
+                prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
+                switch (node->kind) {
+                    case mtcc_ASTNodeKind_TU: {
+                        prb_addStrSegment(&nodeNameBuilder, "TU");
+                    } break;
+
+                    case mtcc_ASTNodeKind_PPDirective: {
+                        prb_addStrSegment(&nodeNameBuilder, "PPDirective");
+                    } break;
+
+                    case mtcc_ASTNodeKind_Token: {
+                        prb_addStrSegment(&nodeNameBuilder, "Token");
+                    } break;
+                }
+                prb_addStrSegment(&nodeNameBuilder, "%d", nodeIndex);
+                Str nodeName = prb_endStr(&nodeNameBuilder);
+
+                prb_addStrSegment(&gstr, "    %.*s", LIT(nodeName));
+                switch (node->kind) {
+                    case mtcc_ASTNodeKind_TU: break;
+                    case mtcc_ASTNodeKind_PPDirective: break;
+
+                    case mtcc_ASTNodeKind_Token: {
+                        prb_addStrSegment(&gstr, " [label=\"");
+                        addEscapedStr(&gstr, node->token.str);
+                        prb_addStrSegment(&gstr, "\"]");
+                    } break;
+                }
+                prb_addStrSegment(&gstr, "\n");
+
+                Str parentName = {};
+                if (node->parent) {
+                    parentName = arrpop(parentNames);
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s\n", LIT(parentName), LIT(nodeName));
+                }
+
+                if (node->sibling) {
+                    arrput(nodes, node->sibling);
+                    arrput(parentNames, parentName);
+                }
+
+                if (node->child) {
+                    arrput(nodes, node->child);
+                    arrput(parentNames, nodeName);
+                }
+            }
+
+            prb_addStrSegment(&gstr, "}\n");
+            Str treestr = prb_endStr(&gstr);
+            Str treepath = prb_pathJoin(arena, globalRootDir, STR("tree.dot"));
+            prb_writeEntireFile(arena, treepath, treestr.ptr, treestr.len);
+            assert(execCmd(arena, prb_fmt(arena, "dot -Tpdf -O %.*s", LIT(treepath))));
+        }
     }
 }
 
@@ -378,7 +471,7 @@ main(void) {
     Arena  arena_ = prb_createArenaFromVmem(1 * prb_GIGABYTE);
     Arena* arena = &arena_;
 
-    // Str rootDir = prb_getParentDir(arena, STR(__FILE__));
+    globalRootDir = prb_getParentDir(arena, STR(__FILE__));
 
     test_tokenIter(arena);
     test_ast(arena);

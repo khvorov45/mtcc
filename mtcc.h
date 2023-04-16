@@ -507,7 +507,17 @@ mtcc_PRIVATEAPI void
 mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
     node->parent = astb->node;
-    astb->node->child = node;
+    if (astb->node->child) {
+        // TODO(khvorov) Find a better way than traversing every time
+        for (mtcc_ASTNode* child = astb->node->child;; child = child->sibling) {
+            if (!child->sibling) {
+                child->sibling = node;
+                break;
+            }
+        }
+    } else {
+        astb->node->child = node;
+    }
     astb->node = node;
 }
 
