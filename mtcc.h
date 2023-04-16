@@ -539,60 +539,50 @@ mtcc_createASTBuilder(mtcc_Bytes output) {
 
 mtcc_PUBLICAPI void
 mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
-    mtcc_ASTNode* before = astb->node;
     switch (astb->node->kind) {
         case mtcc_ASTNodeKind_TU: {
+            mtcc_astBuilderPushChild(astb);
+
             switch (token.kind) {
                 case mtcc_TokenKind_Punctuator: {
                     if (token.str.len == 1 && token.str.ptr[0] == '#') {
-                        mtcc_astBuilderPushChild(astb);
                         astb->node->kind = mtcc_ASTNodeKind_PPDirective;
                         mtcc_astBuilderPushChild(astb);
-                        astb->node->kind = mtcc_ASTNodeKind_Token;
-                        astb->node->token = token;
                     }
                 } break;
+
                 default: break;
             }
+
         } break;
 
-        case mtcc_ASTNodeKind_Token: {
-            mtcc_assert(astb->node->parent);
-            switch (astb->node->parent->kind) {
-                case mtcc_ASTNodeKind_PPDirective: {
-                    // TODO(khvorov) Should this be a separate token?
-                    bool unescapedNewline = false;
-                    if (token.kind == mtcc_TokenKind_Whitespace) {
-                        for (intptr_t ind = 0; ind < token.str.len; ind++) {
-                            char ch = token.str.ptr[ind];
-                            if (ch == '\n' || ch == '\r') {
-                                unescapedNewline = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (unescapedNewline) {
-                        astb->node = astb->node->parent;
-                        mtcc_astBuilderPushSibling(astb);
-                        astb->node->kind = mtcc_ASTNodeKind_Token;
-                        astb->node->token = token;
-                        astb->node = astb->node->parent;
+        case mtcc_ASTNodeKind_PPDirective: {
+            // TODO(khvorov) Should this be a separate token?
+            bool unescapedNewline = false;
+            if (token.kind == mtcc_TokenKind_Whitespace) {
+                for (intptr_t ind = 0; ind < token.str.len; ind++) {
+                    char ch = token.str.ptr[ind];
+                    if (ch == '\n' || ch == '\r') {
+                        unescapedNewline = true;
+                        break;
                     }
                 }
-
-                default: break;
             }
+
+            if (unescapedNewline) {
+                mtcc_astBuilderPushSibling(astb);
+            } else {
+                mtcc_astBuilderPushChild(astb);
+            }
+
         } break;
 
-        case mtcc_ASTNodeKind_PPDirective: mtcc_assert(!"unreachable"); break;
+        case mtcc_ASTNodeKind_Token: mtcc_assert(!"unreachable"); break;
     }
 
-    if (before == astb->node) {
-        mtcc_astBuilderPushSibling(astb);
-        astb->node->kind = mtcc_ASTNodeKind_Token;
-        astb->node->token = token;
-    }
+    astb->node->kind = mtcc_ASTNodeKind_Token;
+    astb->node->token = token;
+    astb->node = astb->node->parent;
 }
 
 #ifdef __GNUC__

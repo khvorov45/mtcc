@@ -381,7 +381,7 @@ test_ast(Arena* arena) {
         Str program = STR(
             "#include \"header1.h\"\n"
             "#include <header2.h>\n"
-            // "int func1() {}\n"
+            "int func1() {}\n"
             // "int func2() {}\n"
             // "int func3() {}\n"
             // "int func4() {}\n"
