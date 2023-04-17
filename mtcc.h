@@ -174,13 +174,13 @@ typedef struct mtcc_TokenIter {
 } mtcc_TokenIter;
 
 mtcc_PUBLICAPI mtcc_TokenIter
-mtcc_createPPTokenIter(mtcc_Str input) {
+mtcc_createTokenIter(mtcc_Str input) {
     mtcc_TokenIter iter = {.input = input};
     return iter;
 }
 
 mtcc_PUBLICAPI mtcc_More
-mtcc_ppTokenIterNext(mtcc_TokenIter* iter) {
+mtcc_tokenIterNext(mtcc_TokenIter* iter) {
     mtcc_More result = mtcc_More_No;
 
     if (iter->offset < iter->input.len) {
@@ -478,6 +478,22 @@ mtcc_ppTokenIterNext(mtcc_TokenIter* iter) {
     return result;
 }
 
+typedef enum mtcc_ASTSourceKind {
+    mtcc_ASTSourceKind_None,
+    mtcc_ASTSourceKind_Include,
+} mtcc_ASTSourceKind;
+
+typedef struct mtcc_ASTSource {
+    mtcc_ASTSourceKind kind;
+    mtcc_Str           include;
+} mtcc_ASTSource;
+
+typedef struct mtcc_ASTSourceEntry mtcc_ASTSourceEntry;
+typedef struct mtcc_ASTSourceEntry {
+    mtcc_ASTSourceEntry* parent;
+    mtcc_ASTSource       src;
+} mtcc_ASTSourceEntry;
+
 typedef enum mtcc_ASTNodeKind {
     mtcc_ASTNodeKind_TU,
     mtcc_ASTNodeKind_PPDirective,
@@ -486,12 +502,13 @@ typedef enum mtcc_ASTNodeKind {
 
 typedef struct mtcc_ASTNode mtcc_ASTNode;
 typedef struct mtcc_ASTNode {
-    mtcc_ASTNodeKind kind;
-    mtcc_ASTNode*    parent;
-    mtcc_ASTNode*    child;
-    mtcc_ASTNode*    lastChild;
-    mtcc_ASTNode*    sibling;
-    mtcc_Token       token;
+    mtcc_ASTNodeKind     kind;
+    mtcc_ASTNode*        parent;
+    mtcc_ASTNode*        child;
+    mtcc_ASTNode*        lastChild;
+    mtcc_ASTNode*        sibling;
+    mtcc_ASTSourceEntry* source;
+    mtcc_Token           token;
 } mtcc_ASTNode;
 
 typedef struct mtcc_AST {
@@ -499,14 +516,31 @@ typedef struct mtcc_AST {
 } mtcc_AST;
 
 typedef struct mtcc_ASTBuilder {
-    mtcc_AST      ast;
-    mtcc_ASTNode* node;
-    mtcc_Arena    output;
+    mtcc_AST             ast;
+    mtcc_ASTNode*        node;
+    mtcc_Arena           output;
+    mtcc_ASTSourceEntry* source;
+    mtcc_Str             include;
 } mtcc_ASTBuilder;
+
+mtcc_PUBLICAPI mtcc_ASTBuilder
+mtcc_createASTBuilder(mtcc_Bytes output, mtcc_ASTSource source) {
+    mtcc_ASTBuilder astb = {.output = mtcc_arenaFromBytes(output)};
+    astb.source = mtcc_arenaAllocStruct(&astb.output, mtcc_ASTSourceEntry);
+    astb.source->src = source;
+
+    // TODO(khvorov) Should these two lines be a funtion?
+    astb.node = mtcc_arenaAllocStruct(&astb.output, mtcc_ASTNode);
+    astb.node->source = astb.source;
+
+    astb.ast.root = astb.node;
+    return astb;
+}
 
 mtcc_PRIVATEAPI void
 mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->source = astb->source;
     mtcc_assert(astb->node);
     node->parent = astb->node;
     if (astb->node->child) {
@@ -522,6 +556,7 @@ mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
 mtcc_PRIVATEAPI void
 mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->source = astb->source;
     mtcc_assert(astb->node);
     node->parent = astb->node->parent;
     mtcc_assert(node->parent);
@@ -531,16 +566,15 @@ mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
     astb->node = node;
 }
 
-mtcc_PUBLICAPI mtcc_ASTBuilder
-mtcc_createASTBuilder(mtcc_Bytes output) {
-    mtcc_ASTBuilder astb = {.output = mtcc_arenaFromBytes(output)};
-    astb.node = mtcc_arenaAllocStruct(&astb.output, mtcc_ASTNode);
-    astb.ast.root = astb.node;
-    return astb;
-}
+typedef enum mtcc_ASTBuilderAction {
+    mtcc_ASTBuilderAction_None,
+    mtcc_ASTBuilderAction_SwitchToInclude,
+} mtcc_ASTBuilderAction;
 
-mtcc_PUBLICAPI void
+mtcc_PUBLICAPI mtcc_ASTBuilderAction
 mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
+    mtcc_ASTBuilderAction result = mtcc_ASTBuilderAction_None;
+
     switch (astb->node->kind) {
         case mtcc_ASTNodeKind_TU: {
             mtcc_astBuilderPushChild(astb);
@@ -572,9 +606,13 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
+                result = mtcc_ASTBuilderAction_SwitchToInclude;
                 mtcc_astBuilderPushSibling(astb);
             } else {
                 mtcc_astBuilderPushChild(astb);
+                if (token.kind == mtcc_TokenKind_HeaderName) {
+                    astb->include = token.str;
+                }
             }
 
         } break;
@@ -585,6 +623,22 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
     astb->node->kind = mtcc_ASTNodeKind_Token;
     astb->node->token = token;
     astb->node = astb->node->parent;
+
+    return result;
+}
+
+mtcc_PUBLICAPI void
+mtcc_astBuilderSwitchToInclude(mtcc_ASTBuilder* astb) {
+    mtcc_ASTSource      src = {.kind = mtcc_ASTSourceKind_Include, .include = astb->include};
+    mtcc_ASTSourceEntry entry = {.parent = astb->source, .src = src};
+    astb->source = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTSourceEntry);
+    *astb->source = entry;
+}
+
+mtcc_PUBLICAPI void
+mtcc_astBuilderSrcDone(mtcc_ASTBuilder* astb) {
+    mtcc_assert(astb->source);
+    astb->source = astb->source->parent;
 }
 
 #ifdef __GNUC__

@@ -21,6 +21,17 @@ typedef uint8_t   u8;
 typedef int32_t   i32;
 typedef intptr_t  isize;
 
+typedef struct VisualTreeNode VisualTreeNode;
+typedef struct VisualTreeNode {
+    mtcc_ASTNode*   astnode;
+    Str             nodeName;
+    Str             nodeLabel;
+    Str             srcName;
+    VisualTreeNode* parent;
+    VisualTreeNode* child;
+    VisualTreeNode* sibling;
+} VisualTreeNode;
+
 Str globalRootDir = {};
 
 function prb_Status
@@ -55,21 +66,21 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_Token
 
     for (i32 ind = 0; ind < casesCount; ind++) {
         Str            input = spacesAround[ind];
-        mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
+        mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
 
-        assert(mtcc_ppTokenIterNext(&iter));
+        assert(mtcc_tokenIterNext(&iter));
         assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
         assert(prb_streq(MTP(iter.pptoken.str), STR(" ")));
 
-        assert(mtcc_ppTokenIterNext(&iter));
+        assert(mtcc_tokenIterNext(&iter));
         assert(iter.pptoken.kind == expected);
         assert(prb_streq(MTP(iter.pptoken.str), cases[ind]));
 
-        assert(mtcc_ppTokenIterNext(&iter));
+        assert(mtcc_tokenIterNext(&iter));
         assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
         assert(prb_streq(MTP(iter.pptoken.str), STR("\n")));
 
-        assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+        assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
     }
 
     prb_endTempMemory(temp);
@@ -88,11 +99,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_Comment);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Comment);
@@ -106,11 +117,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_EscapedNewline);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
     }
 
@@ -123,11 +134,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
     }
 
@@ -140,11 +151,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_Ident);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Ident);
@@ -162,11 +173,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_PPNumber);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_PPNumber);
@@ -181,11 +192,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_CharConst);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_CharConst);
@@ -200,11 +211,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_StrLit);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_StrLit);
@@ -270,11 +281,11 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_Punctuator);
             assert(prb_streq(MTP(iter.pptoken.str), input));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
         test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Punctuator);
@@ -289,15 +300,15 @@ test_tokenIter(Arena* arena) {
 
         for (i32 ind = 0; ind < prb_arrayCount(cases); ind++) {
             Str            input = cases[ind];
-            mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(input));
-            assert(mtcc_ppTokenIterNext(&iter));
-            assert(mtcc_ppTokenIterNext(&iter));
-            assert(mtcc_ppTokenIterNext(&iter));
-            assert(mtcc_ppTokenIterNext(&iter));
+            mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
+            assert(mtcc_tokenIterNext(&iter));
+            assert(mtcc_tokenIterNext(&iter));
+            assert(mtcc_tokenIterNext(&iter));
+            assert(mtcc_tokenIterNext(&iter));
             assert(iter.pptoken.kind == mtcc_TokenKind_HeaderName);
             Str headerPath = prb_strSlice(MTP(iter.pptoken.str), 1, iter.pptoken.str.len - 1);
             assert(prb_streq(headerPath, STR("header.h")));
-            assert(mtcc_ppTokenIterNext(&iter) == mtcc_More_No);
+            assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
     }
 
@@ -363,9 +374,9 @@ test_tokenIter(Arena* arena) {
             (mtcc_Token) {.kind = mtcc_TokenKind_Whitespace, .str = MSTR("\n")},
         };
 
-        mtcc_TokenIter iter = mtcc_createPPTokenIter(PTM(program));
+        mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program));
         i32            tokensCount = 0;
-        for (; mtcc_ppTokenIterNext(&iter); tokensCount++) {
+        for (; mtcc_tokenIterNext(&iter); tokensCount++) {
             assert(tokensCount < prb_arrayCount(expectedTokens));
             mtcc_Token expected = expectedTokens[tokensCount];
             assert(iter.pptoken.kind == expected.kind);
@@ -387,31 +398,68 @@ test_ast(Arena* arena) {
             // "int func4() {}\n"
         );
 
-        mtcc_TokenIter  iter = mtcc_createPPTokenIter(PTM(program));
-        mtcc_ASTBuilder astb = mtcc_createASTBuilder((mtcc_Bytes) {prb_arenaFreePtr(arena), prb_arenaFreeSize(arena)});
+        Str header1 = STR("int h1 = 1;");
+        Str header2 = STR("int h2 = 2;");
 
-        for (; mtcc_ppTokenIterNext(&iter);) {
-            mtcc_astBuilderNext(&astb, iter.pptoken);
+        prb_Arena       astbArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
+        mtcc_ASTBuilder astb = mtcc_createASTBuilder(
+            (mtcc_Bytes) {prb_arenaFreePtr(&astbArena), prb_arenaFreeSize(&astbArena)},
+            (mtcc_ASTSource) {}
+        );
+
+        mtcc_TokenIter  programIter = mtcc_createTokenIter(PTM(program));
+        mtcc_TokenIter* iters = 0;
+        arrput(iters, programIter);
+
+        for (; arrlen(iters) > 0;) {
+            mtcc_TokenIter* lastIter = iters + arrlen(iters) - 1;
+
+            for (bool breakLoop = false; !breakLoop;) {
+                breakLoop = mtcc_tokenIterNext(lastIter) == mtcc_More_No;
+                if (!breakLoop) {
+                    mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, lastIter->pptoken);
+
+                    switch (action) {
+                        case mtcc_ASTBuilderAction_None: break;
+                        case mtcc_ASTBuilderAction_SwitchToInclude: {
+                            Str path = prb_strSlice(MTP(astb.include), 1, astb.include.len - 1);
+                            Str relevantStr = {};
+                            if (prb_streq(path, STR("header1.h"))) {
+                                relevantStr = header1;
+                            } else if (prb_streq(path, STR("header2.h"))) {
+                                relevantStr = header2;
+                            } else {
+                                assert(!"unreachable");
+                            }
+                            mtcc_TokenIter relevantIter = mtcc_createTokenIter(PTM(relevantStr));
+                            arrput(iters, relevantIter);
+
+                            mtcc_astBuilderSwitchToInclude(&astb);
+                            breakLoop = true;
+                        } break;
+                    }
+                } else {
+                    arrpop(iters);
+                    mtcc_astBuilderSrcDone(&astb);
+                }
+            }
         }
 
         prb_arenaChangeUsed(arena, astb.output.used);
 
         // NOTE(khvorov) Visualize the tree
         {
-            prb_Arena      gstrArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
-            prb_GrowingStr gstr = prb_beginStr(&gstrArena);
-            prb_addStrSegment(&gstr, "digraph {\n");
+            VisualTreeNode* visRoot = prb_arenaAllocStruct(arena, VisualTreeNode);
+            visRoot->astnode = astb.ast.root;
 
-            mtcc_ASTNode** nodes = 0;
-            arrput(nodes, astb.ast.root);
+            VisualTreeNode** visnodes = 0;
+            arrput(visnodes, visRoot);
 
-            Str* parentNames = 0;
-
-            for (i32 nodeIndex = 0; arrlen(nodes) > 0; nodeIndex++) {
-                mtcc_ASTNode* node = arrpop(nodes);
+            for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
+                VisualTreeNode* visnode = arrpop(visnodes);
 
                 prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
-                switch (node->kind) {
+                switch (visnode->astnode->kind) {
                     case mtcc_ASTNodeKind_TU: {
                         prb_addStrSegment(&nodeNameBuilder, "TU");
                     } break;
@@ -424,37 +472,80 @@ test_ast(Arena* arena) {
                         prb_addStrSegment(&nodeNameBuilder, "Token");
                     } break;
                 }
-                prb_addStrSegment(&nodeNameBuilder, "%d", nodeIndex);
-                Str nodeName = prb_endStr(&nodeNameBuilder);
+                prb_addStrSegment(&nodeNameBuilder, "%d", visNodeIndex);
+                visnode->nodeName = prb_endStr(&nodeNameBuilder);
 
-                prb_addStrSegment(&gstr, "    %.*s", LIT(nodeName));
-                switch (node->kind) {
-                    case mtcc_ASTNodeKind_TU: break;
-                    case mtcc_ASTNodeKind_PPDirective: break;
+                prb_GrowingStr lblBuilder = prb_beginStr(arena);
+                switch (visnode->astnode->kind) {
+                    case mtcc_ASTNodeKind_TU:
+                    case mtcc_ASTNodeKind_PPDirective: {
+                        prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
+                    } break;
 
                     case mtcc_ASTNodeKind_Token: {
-                        prb_addStrSegment(&gstr, " [label=\"");
-                        addEscapedStr(&gstr, node->token.str);
-                        prb_addStrSegment(&gstr, "\"]");
+                        addEscapedStr(&lblBuilder, visnode->astnode->token.str);
                     } break;
                 }
-                prb_addStrSegment(&gstr, "\n");
+                visnode->nodeLabel = prb_endStr(&lblBuilder);
 
-                Str parentName = {};
-                if (node->parent) {
-                    parentName = arrpop(parentNames);
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s\n", LIT(parentName), LIT(nodeName));
+                if (visnode->astnode->child) {
+                    VisualTreeNode* child = prb_arenaAllocStruct(arena, VisualTreeNode);
+                    child->astnode = visnode->astnode->child;
+                    child->parent = visnode;
+                    visnode->child = child;
+                    arrput(visnodes, child);
                 }
 
-                if (node->sibling) {
-                    arrput(nodes, node->sibling);
-                    arrput(parentNames, parentName);
+                if (visnode->astnode->sibling) {
+                    VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
+                    sibling->astnode = visnode->astnode->sibling;
+                    sibling->parent = visnode->parent;
+                    visnode->sibling = sibling;
+                    arrput(visnodes, sibling);
                 }
 
-                if (node->child) {
-                    arrput(nodes, node->child);
-                    arrput(parentNames, nodeName);
+                assert(visnode->astnode->source);
+                switch (visnode->astnode->source->src.kind) {
+                    case mtcc_ASTSourceKind_None: {
+                        visnode->srcName = STR("srcnone");
+                    } break;
+                    case mtcc_ASTSourceKind_Include: {
+                        Str path = prb_strSlice(MTP(visnode->astnode->source->src.include), 1, visnode->astnode->source->src.include.len - 1);
+                        if (prb_streq(path, STR("header1.h"))) {
+                            visnode->srcName = STR("header1");
+                        } else if (prb_streq(path, STR("header2.h"))) {
+                            visnode->srcName = STR("header2");
+                        } else {
+                            assert(!"unreachable");
+                        }
+                    } break;
                 }
+            }
+
+            prb_Arena      gstrArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
+            prb_GrowingStr gstr = prb_beginStr(&gstrArena);
+            prb_addStrSegment(&gstr, "digraph {\n");
+
+            assert(arrlen(visnodes) == 0);
+            arrput(visnodes, visRoot);
+
+            for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
+                VisualTreeNode* visnode = arrpop(visnodes);
+
+                prb_addStrSegment(&gstr, "    %.*s [label=\"%.*s\"]\n", LIT(visnode->nodeName), LIT(visnode->nodeLabel));
+
+                if (visnode->child) {
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s\n", LIT(visnode->nodeName), LIT(visnode->child->nodeName));
+                    arrput(visnodes, visnode->child);
+                }
+
+                if (visnode->sibling) {
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->sibling->nodeName));
+                    arrput(visnodes, visnode->sibling);
+                }
+
+                // TODO(khvorov) Figure out how to label the source when it changes
+                // prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=inv style=dotted]\n", LIT(visnode->srcName), LIT(visnode->nodeName));
             }
 
             prb_addStrSegment(&gstr, "}\n");
