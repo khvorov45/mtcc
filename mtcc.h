@@ -505,8 +505,8 @@ typedef struct mtcc_ASTNode {
     mtcc_ASTNodeKind     kind;
     mtcc_ASTNode*        parent;
     mtcc_ASTNode*        child;
-    mtcc_ASTNode*        lastChild;
-    mtcc_ASTNode*        sibling;
+    mtcc_ASTNode*        nextSibling;
+    mtcc_ASTNode*        prevSibling;
     mtcc_ASTSourceEntry* source;
     mtcc_Token           token;
 } mtcc_ASTNode;
@@ -532,6 +532,8 @@ mtcc_createASTBuilder(mtcc_Bytes output, mtcc_ASTSource source) {
     // TODO(khvorov) Should these two lines be a funtion?
     astb.node = mtcc_arenaAllocStruct(&astb.output, mtcc_ASTNode);
     astb.node->source = astb.source;
+    astb.node->nextSibling = astb.node;
+    astb.node->prevSibling = astb.node;
 
     astb.ast.root = astb.node;
     return astb;
@@ -544,12 +546,15 @@ mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
     mtcc_assert(astb->node);
     node->parent = astb->node;
     if (astb->node->child) {
-        mtcc_assert(astb->node->lastChild);
-        astb->node->lastChild->sibling = node;
+        node->nextSibling = astb->node->child;
+        node->prevSibling = astb->node->child->prevSibling;
+        astb->node->child->prevSibling->nextSibling = node;
+        astb->node->child->prevSibling = node;
     } else {
+        node->nextSibling = node;
+        node->prevSibling = node;
         astb->node->child = node;
     }
-    astb->node->lastChild = node;
     astb->node = node;
 }
 
@@ -560,9 +565,10 @@ mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
     mtcc_assert(astb->node);
     node->parent = astb->node->parent;
     mtcc_assert(node->parent);
-    mtcc_assert(!astb->node->sibling);
-    astb->node->sibling = node;
-    node->parent->lastChild = node;
+    node->nextSibling = astb->node;
+    node->prevSibling = astb->node->prevSibling;
+    astb->node->prevSibling->nextSibling = node;
+    astb->node->prevSibling = node;
     astb->node = node;
 }
 

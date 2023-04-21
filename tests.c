@@ -29,7 +29,8 @@ typedef struct VisualTreeNode {
     Str             srcName;
     VisualTreeNode* parent;
     VisualTreeNode* child;
-    VisualTreeNode* sibling;
+    VisualTreeNode* nextSibling;
+    VisualTreeNode* prevSibling;
 } VisualTreeNode;
 
 Str globalRootDir = {};
@@ -390,7 +391,7 @@ function void
 test_ast(Arena* arena) {
     {
         Str program = STR(
-            "#include \"header1.h\"\n"
+            // "#include \"header1.h\"\n"
             "#include <header2.h>\n"
             "int func1() {}\n"
             // "int func2() {}\n"
@@ -451,6 +452,8 @@ test_ast(Arena* arena) {
         {
             VisualTreeNode* visRoot = prb_arenaAllocStruct(arena, VisualTreeNode);
             visRoot->astnode = astb.ast.root;
+            visRoot->nextSibling = visRoot;
+            visRoot->prevSibling = visRoot;
 
             VisualTreeNode** visnodes = 0;
             arrput(visnodes, visRoot);
@@ -496,12 +499,18 @@ test_ast(Arena* arena) {
                     arrput(visnodes, child);
                 }
 
-                if (visnode->astnode->sibling) {
-                    VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
-                    sibling->astnode = visnode->astnode->sibling;
-                    sibling->parent = visnode->parent;
-                    visnode->sibling = sibling;
-                    arrput(visnodes, sibling);
+                if (visnode->astnode->parent) {
+                    if (visnode->astnode->nextSibling != visnode->astnode->parent->child) {
+                        VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
+                        sibling->astnode = visnode->astnode->nextSibling;
+                        sibling->parent = visnode->parent;
+                        visnode->nextSibling = sibling;
+                        sibling->prevSibling = visnode;
+                        arrput(visnodes, sibling);
+                    } else {
+                        visnode->nextSibling = visnode->parent->child;
+                        visnode->parent->child->prevSibling = visnode;
+                    }
                 }
 
                 assert(visnode->astnode->source);
@@ -539,9 +548,12 @@ test_ast(Arena* arena) {
                     arrput(visnodes, visnode->child);
                 }
 
-                if (visnode->sibling) {
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->sibling->nodeName));
-                    arrput(visnodes, visnode->sibling);
+                if (visnode->astnode->parent) {
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->nextSibling->nodeName));
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed color=red]\n", LIT(visnode->nodeName), LIT(visnode->prevSibling->nodeName));
+                    if (visnode->nextSibling != visnode->parent->child) {
+                        arrput(visnodes, visnode->nextSibling);
+                    }
                 }
 
                 // TODO(khvorov) Figure out how to label the source when it changes
