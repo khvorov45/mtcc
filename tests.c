@@ -26,11 +26,11 @@ typedef struct VisualTreeNode {
     mtcc_ASTNode*   astnode;
     Str             nodeName;
     Str             nodeLabel;
-    Str             srcName;
     VisualTreeNode* parent;
     VisualTreeNode* child;
     VisualTreeNode* nextSibling;
     VisualTreeNode* prevSibling;
+    VisualTreeNode* expansion;
 } VisualTreeNode;
 
 Str globalRootDir = {};
@@ -391,8 +391,7 @@ function mtcc_ASTBuilder
 test_ast_createBuilder(Arena* arena) {
     Arena           astbArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
     mtcc_ASTBuilder astb = mtcc_createASTBuilder(
-        (mtcc_Bytes) {prb_arenaFreePtr(&astbArena), prb_arenaFreeSize(&astbArena)},
-        (mtcc_ASTSource) {}
+        (mtcc_Bytes) {prb_arenaFreePtr(&astbArena), prb_arenaFreeSize(&astbArena)}
     );
     return astb;
 }
@@ -409,11 +408,10 @@ test_ast(Arena* arena) {
         }
 
         mtcc_ASTNode* node = astb.ast.root;
-        mtcc_assert(node->kind == mtcc_ASTNodeKind_TU);
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Root);
         mtcc_assert(node->parent == 0);
         mtcc_assert(node->nextSibling == node);
         mtcc_assert(node->prevSibling == node);
-        mtcc_assert(node->source == astb.source);
 
         node = node->child;
         mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
@@ -421,7 +419,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("int")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -430,7 +427,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR(" ")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -439,7 +435,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("func1")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -448,7 +443,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("(")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -457,7 +451,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR(")")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -466,7 +459,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR(" ")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -475,7 +467,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("{")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -484,7 +475,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("}")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         assert(node->nextSibling->prevSibling == node);
         node = node->nextSibling;
@@ -493,7 +483,6 @@ test_ast(Arena* arena) {
         mtcc_assert(mtcc_streq(node->token.str, MSTR("\n")));
         mtcc_assert(node->parent == astb.ast.root);
         mtcc_assert(node->child == 0);
-        mtcc_assert(node->source == astb.source);
 
         mtcc_assert(node->nextSibling == astb.ast.root->child);
         mtcc_assert(astb.ast.root->child->prevSibling == node);
@@ -506,11 +495,11 @@ test_ast(Arena* arena) {
 
         Str program = STR(
             "#include \"header1.h\"\n"
-            "#include <header2.h>\n\n"
+            // "#include <header2.h>\n\n"
             "int func1() {}\n"
         );
 
-        Str header1 = STR("int h1 = 1;");
+        Str header1 = STR("#include <header2.h>\n\nint h1 = 1;");
         Str header2 = STR("float h2 = 2;");
 
         mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
@@ -548,7 +537,9 @@ test_ast(Arena* arena) {
                     }
                 } else {
                     arrpop(iters);
-                    mtcc_astBuilderSrcDone(&astb);
+                    if (arrlen(iters) > 0) {
+                        mtcc_astBuilderSrcDone(&astb);
+                    }
                 }
             }
         }
@@ -556,46 +547,26 @@ test_ast(Arena* arena) {
         // NOTE(khvorov) Verify tree contents
         {
             mtcc_ASTNode* node = astb.ast.root;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_TU);
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_Root);
             mtcc_assert(node->parent == 0);
             mtcc_assert(node->nextSibling == node);
             mtcc_assert(node->prevSibling == node);
-            mtcc_assert(node->source->parent == 0);
-            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
 
             node = node->child;
             mtcc_assert(node->kind == mtcc_ASTNodeKind_PPDirective);
-            mtcc_assert(node->source->parent == 0);
-            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
+            mtcc_assert(node->expansion);
 
             node = node->child;
             mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
             mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
             mtcc_assert(mtcc_streq(node->token.str, MSTR("#")));
             mtcc_assert(node->child == 0);
-            mtcc_assert(node->source->parent == 0);
-            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
 
             node = node->parent->nextSibling;
             mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
             mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
             mtcc_assert(mtcc_streq(node->token.str, MSTR("\n")));
             mtcc_assert(node->child == 0);
-            mtcc_assert(node->source->parent == 0);
-            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
-
-            node = node->nextSibling;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
-            mtcc_assert(node->token.kind == mtcc_TokenKind_Ident);
-            mtcc_assert(mtcc_streq(node->token.str, MSTR("int")));
-
-            for (; node->source->src.kind == mtcc_ASTSourceKind_Include; node = node->nextSibling) {
-                mtcc_assert(node->child == 0);
-                mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_Include);
-                mtcc_assert(mtcc_streq(node->source->src.include, MSTR("\"header1.h\"")));
-                mtcc_assert(node->source->parent->parent == 0);
-                mtcc_assert(node->source->parent->src.kind == mtcc_ASTSourceKind_None);
-            }
         }
 
         // NOTE(khvorov) Visualize the tree
@@ -613,7 +584,7 @@ test_ast(Arena* arena) {
 
                 prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
                 switch (visnode->astnode->kind) {
-                    case mtcc_ASTNodeKind_TU: {
+                    case mtcc_ASTNodeKind_Root: {
                         prb_addStrSegment(&nodeNameBuilder, "TU");
                     } break;
 
@@ -630,7 +601,7 @@ test_ast(Arena* arena) {
 
                 prb_GrowingStr lblBuilder = prb_beginStr(arena);
                 switch (visnode->astnode->kind) {
-                    case mtcc_ASTNodeKind_TU:
+                    case mtcc_ASTNodeKind_Root:
                     case mtcc_ASTNodeKind_PPDirective: {
                         prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
                     } break;
@@ -649,6 +620,15 @@ test_ast(Arena* arena) {
                     arrput(visnodes, child);
                 }
 
+                if (visnode->astnode->kind == mtcc_ASTNodeKind_PPDirective) {
+                    assert(visnode->astnode->expansion);
+                    VisualTreeNode* expansion = prb_arenaAllocStruct(arena, VisualTreeNode);
+                    expansion->astnode = visnode->astnode->expansion;
+                    expansion->parent = visnode;
+                    visnode->expansion = expansion;
+                    arrput(visnodes, expansion);
+                }
+
                 if (visnode->astnode->parent) {
                     if (visnode->astnode->nextSibling != visnode->astnode->parent->child) {
                         VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
@@ -661,23 +641,6 @@ test_ast(Arena* arena) {
                         visnode->nextSibling = visnode->parent->child;
                         visnode->parent->child->prevSibling = visnode;
                     }
-                }
-
-                assert(visnode->astnode->source);
-                switch (visnode->astnode->source->src.kind) {
-                    case mtcc_ASTSourceKind_None: {
-                        visnode->srcName = STR("srcnone");
-                    } break;
-                    case mtcc_ASTSourceKind_Include: {
-                        Str path = prb_strSlice(MTP(visnode->astnode->source->src.include), 1, visnode->astnode->source->src.include.len - 1);
-                        if (prb_streq(path, STR("header1.h"))) {
-                            visnode->srcName = STR("header1");
-                        } else if (prb_streq(path, STR("header2.h"))) {
-                            visnode->srcName = STR("header2");
-                        } else {
-                            assert(!"unreachable");
-                        }
-                    } break;
                 }
             }
 
@@ -698,6 +661,11 @@ test_ast(Arena* arena) {
                     arrput(visnodes, visnode->child);
                 }
 
+                if (visnode->expansion) {
+                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=icurve]\n", LIT(visnode->nodeName), LIT(visnode->expansion->nodeName));
+                    arrput(visnodes, visnode->expansion);
+                }
+
                 if (visnode->astnode->parent) {
                     prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->nextSibling->nodeName));
                     prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed color=red]\n", LIT(visnode->nodeName), LIT(visnode->prevSibling->nodeName));
@@ -705,9 +673,6 @@ test_ast(Arena* arena) {
                         arrput(visnodes, visnode->nextSibling);
                     }
                 }
-
-                // TODO(khvorov) Figure out how to label the source when it changes
-                // prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=inv style=dotted]\n", LIT(visnode->srcName), LIT(visnode->nodeName));
             }
 
             prb_addStrSegment(&gstr, "}\n");
