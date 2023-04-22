@@ -169,7 +169,7 @@ typedef enum mtcc_TokenIterState {
 typedef struct mtcc_TokenIter {
     mtcc_Str            input;
     intptr_t            offset;
-    mtcc_Token          pptoken;
+    mtcc_Token          token;
     mtcc_TokenIterState state;
 } mtcc_TokenIter;
 
@@ -472,7 +472,7 @@ mtcc_tokenIterNext(mtcc_TokenIter* iter) {
         }
 
         iter->offset = offset;
-        iter->pptoken = tok;
+        iter->token = tok;
     }
 
     return result;
@@ -548,8 +548,8 @@ mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
     if (astb->node->child) {
         node->nextSibling = astb->node->child;
         node->prevSibling = astb->node->child->prevSibling;
-        astb->node->child->prevSibling->nextSibling = node;
-        astb->node->child->prevSibling = node;
+        node->nextSibling->prevSibling = node;
+        node->prevSibling->nextSibling = node;
     } else {
         node->nextSibling = node;
         node->prevSibling = node;
@@ -565,10 +565,10 @@ mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
     mtcc_assert(astb->node);
     node->parent = astb->node->parent;
     mtcc_assert(node->parent);
-    node->nextSibling = astb->node;
-    node->prevSibling = astb->node->prevSibling;
-    astb->node->prevSibling->nextSibling = node;
-    astb->node->prevSibling = node;
+    node->nextSibling = astb->node->nextSibling;
+    node->prevSibling = astb->node;
+    node->nextSibling->prevSibling = node;
+    node->prevSibling->nextSibling = node;
     astb->node = node;
 }
 
@@ -635,7 +635,8 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
 
 mtcc_PUBLICAPI void
 mtcc_astBuilderSwitchToInclude(mtcc_ASTBuilder* astb) {
-    mtcc_ASTSource      src = {.kind = mtcc_ASTSourceKind_Include, .include = astb->include};
+    mtcc_ASTSource src = {.kind = mtcc_ASTSourceKind_Include, .include = astb->include};
+    mtcc_assert(astb->source);
     mtcc_ASTSourceEntry entry = {.parent = astb->source, .src = src};
     astb->source = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTSourceEntry);
     *astb->source = entry;

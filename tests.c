@@ -57,7 +57,7 @@ addEscapedStr(prb_GrowingStr* gstr, mtcc_Str str) {
 }
 
 function void
-test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_TokenKind expected) {
+test_tokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_TokenKind expected) {
     prb_TempMemory temp = prb_beginTempMemory(arena);
 
     Str spacesAround[casesCount];
@@ -70,16 +70,16 @@ test_ppTokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_Token
         mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
 
         assert(mtcc_tokenIterNext(&iter));
-        assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
-        assert(prb_streq(MTP(iter.pptoken.str), STR(" ")));
+        assert(iter.token.kind == mtcc_TokenKind_Whitespace);
+        assert(prb_streq(MTP(iter.token.str), STR(" ")));
 
         assert(mtcc_tokenIterNext(&iter));
-        assert(iter.pptoken.kind == expected);
-        assert(prb_streq(MTP(iter.pptoken.str), cases[ind]));
+        assert(iter.token.kind == expected);
+        assert(prb_streq(MTP(iter.token.str), cases[ind]));
 
         assert(mtcc_tokenIterNext(&iter));
-        assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
-        assert(prb_streq(MTP(iter.pptoken.str), STR("\n")));
+        assert(iter.token.kind == mtcc_TokenKind_Whitespace);
+        assert(prb_streq(MTP(iter.token.str), STR("\n")));
 
         assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
     }
@@ -102,12 +102,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_Comment);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_Comment);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Comment);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Comment);
     }
 
     // NOTE(khvorov) Escaped newline
@@ -120,8 +120,8 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_EscapedNewline);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_EscapedNewline);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
     }
@@ -137,8 +137,8 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_Whitespace);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_Whitespace);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
     }
@@ -154,12 +154,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_Ident);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_Ident);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Ident);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Ident);
     }
 
     // NOTE(khvorov) PPNumber
@@ -176,12 +176,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_PPNumber);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_PPNumber);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_PPNumber);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_PPNumber);
     }
 
     // NOTE(khvorov) Char const
@@ -195,12 +195,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_CharConst);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_CharConst);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_CharConst);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_CharConst);
     }
 
     // NOTE(khvorov) String lit
@@ -214,12 +214,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_StrLit);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_StrLit);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_StrLit);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_StrLit);
     }
 
     // NOTE(khvorov) Punctuator
@@ -284,12 +284,12 @@ test_tokenIter(Arena* arena) {
             Str            input = cases[ind];
             mtcc_TokenIter iter = mtcc_createTokenIter(PTM(input));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_Punctuator);
-            assert(prb_streq(MTP(iter.pptoken.str), input));
+            assert(iter.token.kind == mtcc_TokenKind_Punctuator);
+            assert(prb_streq(MTP(iter.token.str), input));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
 
-        test_ppTokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Punctuator);
+        test_tokenIter_withSpaces(arena, cases, prb_arrayCount(cases), mtcc_TokenKind_Punctuator);
     }
 
     // NOTE(khvorov) Header name
@@ -306,8 +306,8 @@ test_tokenIter(Arena* arena) {
             assert(mtcc_tokenIterNext(&iter));
             assert(mtcc_tokenIterNext(&iter));
             assert(mtcc_tokenIterNext(&iter));
-            assert(iter.pptoken.kind == mtcc_TokenKind_HeaderName);
-            Str headerPath = prb_strSlice(MTP(iter.pptoken.str), 1, iter.pptoken.str.len - 1);
+            assert(iter.token.kind == mtcc_TokenKind_HeaderName);
+            Str headerPath = prb_strSlice(MTP(iter.token.str), 1, iter.token.str.len - 1);
             assert(prb_streq(headerPath, STR("header.h")));
             assert(mtcc_tokenIterNext(&iter) == mtcc_More_No);
         }
@@ -380,33 +380,140 @@ test_tokenIter(Arena* arena) {
         for (; mtcc_tokenIterNext(&iter); tokensCount++) {
             assert(tokensCount < prb_arrayCount(expectedTokens));
             mtcc_Token expected = expectedTokens[tokensCount];
-            assert(iter.pptoken.kind == expected.kind);
-            assert(mtcc_streq(iter.pptoken.str, expected.str));
+            assert(iter.token.kind == expected.kind);
+            assert(mtcc_streq(iter.token.str, expected.str));
         }
         assert(tokensCount == prb_arrayCount(expectedTokens));
     }
 }
 
+function mtcc_ASTBuilder
+test_ast_createBuilder(Arena* arena) {
+    Arena           astbArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
+    mtcc_ASTBuilder astb = mtcc_createASTBuilder(
+        (mtcc_Bytes) {prb_arenaFreePtr(&astbArena), prb_arenaFreeSize(&astbArena)},
+        (mtcc_ASTSource) {}
+    );
+    return astb;
+}
+
 function void
 test_ast(Arena* arena) {
     {
+        prb_TempMemory temp = prb_beginTempMemory(arena);
+        Str            program = STR("int func1() {}\n");
+
+        mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
+        for (mtcc_TokenIter programIter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&programIter);) {
+            mtcc_astBuilderNext(&astb, programIter.token);
+        }
+
+        mtcc_ASTNode* node = astb.ast.root;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_TU);
+        mtcc_assert(node->parent == 0);
+        mtcc_assert(node->nextSibling == node);
+        mtcc_assert(node->prevSibling == node);
+        mtcc_assert(node->source == astb.source);
+
+        node = node->child;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Ident);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("int")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR(" ")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Ident);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("func1")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("(")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR(")")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR(" ")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("{")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("}")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        assert(node->nextSibling->prevSibling == node);
+        node = node->nextSibling;
+        mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+        mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
+        mtcc_assert(mtcc_streq(node->token.str, MSTR("\n")));
+        mtcc_assert(node->parent == astb.ast.root);
+        mtcc_assert(node->child == 0);
+        mtcc_assert(node->source == astb.source);
+
+        mtcc_assert(node->nextSibling == astb.ast.root->child);
+        mtcc_assert(astb.ast.root->child->prevSibling == node);
+
+        prb_endTempMemory(temp);
+    }
+
+    {
+        prb_TempMemory temp = prb_beginTempMemory(arena);
+
         Str program = STR(
-            // "#include \"header1.h\"\n"
-            "#include <header2.h>\n"
+            "#include \"header1.h\"\n"
+            "#include <header2.h>\n\n"
             "int func1() {}\n"
-            // "int func2() {}\n"
-            // "int func3() {}\n"
-            // "int func4() {}\n"
         );
 
         Str header1 = STR("int h1 = 1;");
-        Str header2 = STR("int h2 = 2;");
+        Str header2 = STR("float h2 = 2;");
 
-        prb_Arena       astbArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
-        mtcc_ASTBuilder astb = mtcc_createASTBuilder(
-            (mtcc_Bytes) {prb_arenaFreePtr(&astbArena), prb_arenaFreeSize(&astbArena)},
-            (mtcc_ASTSource) {}
-        );
+        mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
 
         mtcc_TokenIter  programIter = mtcc_createTokenIter(PTM(program));
         mtcc_TokenIter* iters = 0;
@@ -418,7 +525,7 @@ test_ast(Arena* arena) {
             for (bool breakLoop = false; !breakLoop;) {
                 breakLoop = mtcc_tokenIterNext(lastIter) == mtcc_More_No;
                 if (!breakLoop) {
-                    mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, lastIter->pptoken);
+                    mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, lastIter->token);
 
                     switch (action) {
                         case mtcc_ASTBuilderAction_None: break;
@@ -446,7 +553,50 @@ test_ast(Arena* arena) {
             }
         }
 
-        prb_arenaChangeUsed(arena, astb.output.used);
+        // NOTE(khvorov) Verify tree contents
+        {
+            mtcc_ASTNode* node = astb.ast.root;
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_TU);
+            mtcc_assert(node->parent == 0);
+            mtcc_assert(node->nextSibling == node);
+            mtcc_assert(node->prevSibling == node);
+            mtcc_assert(node->source->parent == 0);
+            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
+
+            node = node->child;
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_PPDirective);
+            mtcc_assert(node->source->parent == 0);
+            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
+
+            node = node->child;
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+            mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
+            mtcc_assert(mtcc_streq(node->token.str, MSTR("#")));
+            mtcc_assert(node->child == 0);
+            mtcc_assert(node->source->parent == 0);
+            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
+
+            node = node->parent->nextSibling;
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+            mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
+            mtcc_assert(mtcc_streq(node->token.str, MSTR("\n")));
+            mtcc_assert(node->child == 0);
+            mtcc_assert(node->source->parent == 0);
+            mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_None);
+
+            node = node->nextSibling;
+            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
+            mtcc_assert(node->token.kind == mtcc_TokenKind_Ident);
+            mtcc_assert(mtcc_streq(node->token.str, MSTR("int")));
+
+            for (; node->source->src.kind == mtcc_ASTSourceKind_Include; node = node->nextSibling) {
+                mtcc_assert(node->child == 0);
+                mtcc_assert(node->source->src.kind == mtcc_ASTSourceKind_Include);
+                mtcc_assert(mtcc_streq(node->source->src.include, MSTR("\"header1.h\"")));
+                mtcc_assert(node->source->parent->parent == 0);
+                mtcc_assert(node->source->parent->src.kind == mtcc_ASTSourceKind_None);
+            }
+        }
 
         // NOTE(khvorov) Visualize the tree
         {
@@ -566,6 +716,8 @@ test_ast(Arena* arena) {
             prb_writeEntireFile(arena, treepath, treestr.ptr, treestr.len);
             assert(execCmd(arena, prb_fmt(arena, "dot -Tpdf -O %.*s", LIT(treepath))));
         }
+
+        prb_endTempMemory(temp);
     }
 }
 
