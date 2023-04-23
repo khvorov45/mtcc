@@ -57,6 +57,119 @@ addEscapedStr(prb_GrowingStr* gstr, mtcc_Str str) {
 }
 
 function void
+treeToDot(Arena* arena, mtcc_ASTNode* root) {
+    VisualTreeNode* visRoot = prb_arenaAllocStruct(arena, VisualTreeNode);
+    visRoot->astnode = root;
+    visRoot->nextSibling = visRoot;
+    visRoot->prevSibling = visRoot;
+
+    VisualTreeNode** visnodes = 0;
+    arrput(visnodes, visRoot);
+
+    for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
+        VisualTreeNode* visnode = arrpop(visnodes);
+
+        prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
+        switch (visnode->astnode->kind) {
+            case mtcc_ASTNodeKind_Root: {
+                prb_addStrSegment(&nodeNameBuilder, "TU");
+            } break;
+
+            case mtcc_ASTNodeKind_PPDirective: {
+                prb_addStrSegment(&nodeNameBuilder, "PPDirective");
+            } break;
+
+            case mtcc_ASTNodeKind_Token: {
+                prb_addStrSegment(&nodeNameBuilder, "Token");
+            } break;
+        }
+        prb_addStrSegment(&nodeNameBuilder, "%d", visNodeIndex);
+        visnode->nodeName = prb_endStr(&nodeNameBuilder);
+
+        prb_GrowingStr lblBuilder = prb_beginStr(arena);
+        switch (visnode->astnode->kind) {
+            case mtcc_ASTNodeKind_Root:
+            case mtcc_ASTNodeKind_PPDirective: {
+                prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
+            } break;
+
+            case mtcc_ASTNodeKind_Token: {
+                addEscapedStr(&lblBuilder, visnode->astnode->token.str);
+            } break;
+        }
+        visnode->nodeLabel = prb_endStr(&lblBuilder);
+
+        if (visnode->astnode->child) {
+            VisualTreeNode* child = prb_arenaAllocStruct(arena, VisualTreeNode);
+            child->astnode = visnode->astnode->child;
+            child->parent = visnode;
+            visnode->child = child;
+            arrput(visnodes, child);
+        }
+
+        if (visnode->astnode->kind == mtcc_ASTNodeKind_PPDirective) {
+            assert(visnode->astnode->expansion);
+            VisualTreeNode* expansion = prb_arenaAllocStruct(arena, VisualTreeNode);
+            expansion->astnode = visnode->astnode->expansion;
+            expansion->parent = visnode;
+            visnode->expansion = expansion;
+            arrput(visnodes, expansion);
+        }
+
+        if (visnode->astnode->parent) {
+            if (visnode->astnode->nextSibling != visnode->astnode->parent->child) {
+                VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
+                sibling->astnode = visnode->astnode->nextSibling;
+                sibling->parent = visnode->parent;
+                visnode->nextSibling = sibling;
+                sibling->prevSibling = visnode;
+                arrput(visnodes, sibling);
+            } else {
+                visnode->nextSibling = visnode->parent->child;
+                visnode->parent->child->prevSibling = visnode;
+            }
+        }
+    }
+
+    prb_Arena      gstrArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
+    prb_GrowingStr gstr = prb_beginStr(&gstrArena);
+    prb_addStrSegment(&gstr, "digraph {\n");
+
+    assert(arrlen(visnodes) == 0);
+    arrput(visnodes, visRoot);
+
+    for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
+        VisualTreeNode* visnode = arrpop(visnodes);
+
+        prb_addStrSegment(&gstr, "    %.*s [label=\"%.*s\"]\n", LIT(visnode->nodeName), LIT(visnode->nodeLabel));
+
+        if (visnode->child) {
+            prb_addStrSegment(&gstr, "    %.*s->%.*s\n", LIT(visnode->nodeName), LIT(visnode->child->nodeName));
+            arrput(visnodes, visnode->child);
+        }
+
+        if (visnode->expansion) {
+            prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=icurve]\n", LIT(visnode->nodeName), LIT(visnode->expansion->nodeName));
+            arrput(visnodes, visnode->expansion);
+        }
+
+        if (visnode->astnode->parent) {
+            prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->nextSibling->nodeName));
+            prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed color=red]\n", LIT(visnode->nodeName), LIT(visnode->prevSibling->nodeName));
+            if (visnode->nextSibling != visnode->parent->child) {
+                arrput(visnodes, visnode->nextSibling);
+            }
+        }
+    }
+
+    prb_addStrSegment(&gstr, "}\n");
+    Str treestr = prb_endStr(&gstr);
+    Str treepath = prb_pathJoin(arena, globalRootDir, STR("tree.dot"));
+    prb_writeEntireFile(arena, treepath, treestr.ptr, treestr.len);
+    assert(execCmd(arena, prb_fmt(arena, "dot -Tpdf -O %.*s", LIT(treepath))));
+}
+
+function void
 test_tokenIter_withSpaces(Arena* arena, Str* cases, i32 casesCount, mtcc_TokenKind expected) {
     prb_TempMemory temp = prb_beginTempMemory(arena);
 
@@ -495,7 +608,6 @@ test_ast(Arena* arena) {
 
         Str program = STR(
             "#include \"header1.h\"\n"
-            // "#include <header2.h>\n\n"
             "int func1() {}\n"
         );
 
@@ -518,27 +630,33 @@ test_ast(Arena* arena) {
 
                     switch (action) {
                         case mtcc_ASTBuilderAction_None: break;
-                        case mtcc_ASTBuilderAction_SwitchToInclude: {
-                            Str path = prb_strSlice(MTP(astb.include), 1, astb.include.len - 1);
-                            Str relevantStr = {};
-                            if (prb_streq(path, STR("header1.h"))) {
-                                relevantStr = header1;
-                            } else if (prb_streq(path, STR("header2.h"))) {
-                                relevantStr = header2;
-                            } else {
-                                assert(!"unreachable");
-                            }
-                            mtcc_TokenIter relevantIter = mtcc_createTokenIter(PTM(relevantStr));
-                            arrput(iters, relevantIter);
+                        case mtcc_ASTBuilderAction_DoPPDirective: {
+                            mtcc_PPDirectiveAction ppaction = mtcc_astBuilderDoPPDirective(&astb);
 
-                            mtcc_astBuilderSwitchToInclude(&astb);
-                            breakLoop = true;
+                            switch (ppaction.kind) {
+                                case mtcc_PPDirectiveActionKind_None: break;
+                                case mtcc_PPDirectiveActionKind_Include: {
+                                    Str path = prb_strSlice(MTP(ppaction.include), 1, ppaction.include.len - 1);
+                                    Str relevantStr = {};
+                                    if (prb_streq(path, STR("header1.h"))) {
+                                        relevantStr = header1;
+                                    } else if (prb_streq(path, STR("header2.h"))) {
+                                        relevantStr = header2;
+                                    } else {
+                                        assert(!"unreachable");
+                                    }
+                                    mtcc_TokenIter relevantIter = mtcc_createTokenIter(PTM(relevantStr));
+                                    arrput(iters, relevantIter);
+
+                                    breakLoop = true;
+                                } break;
+                            }
                         } break;
                     }
                 } else {
                     arrpop(iters);
                     if (arrlen(iters) > 0) {
-                        mtcc_astBuilderSrcDone(&astb);
+                        mtcc_astBuilderEndPPInclude(&astb);
                     }
                 }
             }
@@ -555,6 +673,9 @@ test_ast(Arena* arena) {
             node = node->child;
             mtcc_assert(node->kind == mtcc_ASTNodeKind_PPDirective);
             mtcc_assert(node->expansion);
+            mtcc_assert(node->expansion->child->kind == mtcc_ASTNodeKind_PPDirective);
+            mtcc_assert(node->expansion->child->expansion->child->kind == mtcc_ASTNodeKind_Token);
+            mtcc_assert(mtcc_streq(node->expansion->child->expansion->child->token.str, MSTR("float")));
 
             node = node->child;
             mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
@@ -569,118 +690,7 @@ test_ast(Arena* arena) {
             mtcc_assert(node->child == 0);
         }
 
-        // NOTE(khvorov) Visualize the tree
-        {
-            VisualTreeNode* visRoot = prb_arenaAllocStruct(arena, VisualTreeNode);
-            visRoot->astnode = astb.ast.root;
-            visRoot->nextSibling = visRoot;
-            visRoot->prevSibling = visRoot;
-
-            VisualTreeNode** visnodes = 0;
-            arrput(visnodes, visRoot);
-
-            for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
-                VisualTreeNode* visnode = arrpop(visnodes);
-
-                prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
-                switch (visnode->astnode->kind) {
-                    case mtcc_ASTNodeKind_Root: {
-                        prb_addStrSegment(&nodeNameBuilder, "TU");
-                    } break;
-
-                    case mtcc_ASTNodeKind_PPDirective: {
-                        prb_addStrSegment(&nodeNameBuilder, "PPDirective");
-                    } break;
-
-                    case mtcc_ASTNodeKind_Token: {
-                        prb_addStrSegment(&nodeNameBuilder, "Token");
-                    } break;
-                }
-                prb_addStrSegment(&nodeNameBuilder, "%d", visNodeIndex);
-                visnode->nodeName = prb_endStr(&nodeNameBuilder);
-
-                prb_GrowingStr lblBuilder = prb_beginStr(arena);
-                switch (visnode->astnode->kind) {
-                    case mtcc_ASTNodeKind_Root:
-                    case mtcc_ASTNodeKind_PPDirective: {
-                        prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
-                    } break;
-
-                    case mtcc_ASTNodeKind_Token: {
-                        addEscapedStr(&lblBuilder, visnode->astnode->token.str);
-                    } break;
-                }
-                visnode->nodeLabel = prb_endStr(&lblBuilder);
-
-                if (visnode->astnode->child) {
-                    VisualTreeNode* child = prb_arenaAllocStruct(arena, VisualTreeNode);
-                    child->astnode = visnode->astnode->child;
-                    child->parent = visnode;
-                    visnode->child = child;
-                    arrput(visnodes, child);
-                }
-
-                if (visnode->astnode->kind == mtcc_ASTNodeKind_PPDirective) {
-                    assert(visnode->astnode->expansion);
-                    VisualTreeNode* expansion = prb_arenaAllocStruct(arena, VisualTreeNode);
-                    expansion->astnode = visnode->astnode->expansion;
-                    expansion->parent = visnode;
-                    visnode->expansion = expansion;
-                    arrput(visnodes, expansion);
-                }
-
-                if (visnode->astnode->parent) {
-                    if (visnode->astnode->nextSibling != visnode->astnode->parent->child) {
-                        VisualTreeNode* sibling = prb_arenaAllocStruct(arena, VisualTreeNode);
-                        sibling->astnode = visnode->astnode->nextSibling;
-                        sibling->parent = visnode->parent;
-                        visnode->nextSibling = sibling;
-                        sibling->prevSibling = visnode;
-                        arrput(visnodes, sibling);
-                    } else {
-                        visnode->nextSibling = visnode->parent->child;
-                        visnode->parent->child->prevSibling = visnode;
-                    }
-                }
-            }
-
-            prb_Arena      gstrArena = prb_createArenaFromArena(arena, 1 * prb_MEGABYTE);
-            prb_GrowingStr gstr = prb_beginStr(&gstrArena);
-            prb_addStrSegment(&gstr, "digraph {\n");
-
-            assert(arrlen(visnodes) == 0);
-            arrput(visnodes, visRoot);
-
-            for (i32 visNodeIndex = 0; arrlen(visnodes) > 0; visNodeIndex++) {
-                VisualTreeNode* visnode = arrpop(visnodes);
-
-                prb_addStrSegment(&gstr, "    %.*s [label=\"%.*s\"]\n", LIT(visnode->nodeName), LIT(visnode->nodeLabel));
-
-                if (visnode->child) {
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s\n", LIT(visnode->nodeName), LIT(visnode->child->nodeName));
-                    arrput(visnodes, visnode->child);
-                }
-
-                if (visnode->expansion) {
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=icurve]\n", LIT(visnode->nodeName), LIT(visnode->expansion->nodeName));
-                    arrput(visnodes, visnode->expansion);
-                }
-
-                if (visnode->astnode->parent) {
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed]\n", LIT(visnode->nodeName), LIT(visnode->nextSibling->nodeName));
-                    prb_addStrSegment(&gstr, "    %.*s->%.*s [arrowhead=box style=dashed color=red]\n", LIT(visnode->nodeName), LIT(visnode->prevSibling->nodeName));
-                    if (visnode->nextSibling != visnode->parent->child) {
-                        arrput(visnodes, visnode->nextSibling);
-                    }
-                }
-            }
-
-            prb_addStrSegment(&gstr, "}\n");
-            Str treestr = prb_endStr(&gstr);
-            Str treepath = prb_pathJoin(arena, globalRootDir, STR("tree.dot"));
-            prb_writeEntireFile(arena, treepath, treestr.ptr, treestr.len);
-            assert(execCmd(arena, prb_fmt(arena, "dot -Tpdf -O %.*s", LIT(treepath))));
-        }
+        treeToDot(arena, astb.ast.root);
 
         prb_endTempMemory(temp);
     }

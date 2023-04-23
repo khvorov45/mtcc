@@ -522,7 +522,6 @@ typedef struct mtcc_ASTBuilder {
     mtcc_ASTNode*           node;
     mtcc_Arena              output;
     mtcc_ASTNode*           ppdirective;
-    mtcc_Str                include;
     mtcc_ASTNodeStackEntry* nodesBeforeExpansion;
 } mtcc_ASTBuilder;
 
@@ -569,7 +568,7 @@ mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
 
 typedef enum mtcc_ASTBuilderAction {
     mtcc_ASTBuilderAction_None,
-    mtcc_ASTBuilderAction_SwitchToInclude,
+    mtcc_ASTBuilderAction_DoPPDirective,
 } mtcc_ASTBuilderAction;
 
 mtcc_PUBLICAPI mtcc_ASTBuilderAction
@@ -608,13 +607,10 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
-                result = mtcc_ASTBuilderAction_SwitchToInclude;
+                result = mtcc_ASTBuilderAction_DoPPDirective;
                 mtcc_astBuilderPushSibling(astb);
             } else {
                 mtcc_astBuilderPushChild(astb);
-                if (token.kind == mtcc_TokenKind_HeaderName) {
-                    astb->include = token.str;
-                }
             }
 
         } break;
@@ -629,26 +625,76 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
     return result;
 }
 
-mtcc_PUBLICAPI void
-mtcc_astBuilderSwitchToInclude(mtcc_ASTBuilder* astb) {
-    // TODO(khvorov) Freelist?
-    mtcc_ASTNodeStackEntry* entry = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNodeStackEntry);
-    entry->node = astb->node;
-    entry->prev = astb->nodesBeforeExpansion;
-    astb->nodesBeforeExpansion = entry;
+typedef enum mtcc_PPDirectiveActionKind {
+    mtcc_PPDirectiveActionKind_None,
+    mtcc_PPDirectiveActionKind_Include,
+} mtcc_PPDirectiveActionKind;
 
-    // TODO(khvorov) Compress?
-    astb->node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
-    astb->node->nextSibling = astb->node;
-    astb->node->prevSibling = astb->node;
-    astb->node->kind = mtcc_ASTNodeKind_Root;
+typedef struct mtcc_PPDirectiveAction {
+    mtcc_PPDirectiveActionKind kind;
+    mtcc_Str                   include;
+} mtcc_PPDirectiveAction;
+
+mtcc_PUBLICAPI mtcc_PPDirectiveAction
+mtcc_astBuilderDoPPDirective(mtcc_ASTBuilder* astb) {
+    mtcc_PPDirectiveAction action = {};
 
     mtcc_assert(astb->ppdirective);
-    astb->ppdirective->expansion = astb->node;
+    mtcc_assert(astb->ppdirective->child);
+    mtcc_assert(astb->ppdirective->child->kind == mtcc_ASTNodeKind_Token);
+    mtcc_assert(astb->ppdirective->child->token.kind == mtcc_TokenKind_Punctuator);
+    mtcc_assert(mtcc_streq(astb->ppdirective->child->token.str, mtcc_STR("#")));
+
+    // TODO(khvorov) Check for malformed directives
+
+    mtcc_ASTNode* directive = 0;
+    for (mtcc_ASTNode* node = astb->ppdirective->child->nextSibling; node != astb->ppdirective->child; node = node->nextSibling) {
+        if (node->kind == mtcc_ASTNodeKind_Token && node->token.kind == mtcc_TokenKind_Ident) {
+            directive = node;
+            break;
+        }
+    }
+
+    mtcc_assert(directive);
+    mtcc_assert(directive->kind == mtcc_ASTNodeKind_Token);
+    mtcc_assert(directive->token.kind == mtcc_TokenKind_Ident);
+
+    if (mtcc_streq(directive->token.str, mtcc_STR("include"))) {
+        mtcc_Str headerName = {};
+        for (mtcc_ASTNode* node = directive->nextSibling; node != astb->ppdirective->child; node = node->nextSibling) {
+            if (node->kind == mtcc_ASTNodeKind_Token && node->token.kind == mtcc_TokenKind_HeaderName) {
+                headerName = node->token.str;
+                break;
+            }
+        }
+
+        mtcc_assert(headerName.ptr);
+
+        action.kind = mtcc_PPDirectiveActionKind_Include;
+        action.include = headerName;
+
+        // TODO(khvorov) Freelist?
+        mtcc_ASTNodeStackEntry* entry = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNodeStackEntry);
+        entry->node = astb->node;
+        entry->prev = astb->nodesBeforeExpansion;
+        astb->nodesBeforeExpansion = entry;
+
+        // TODO(khvorov) Compress?
+        astb->node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+        astb->node->nextSibling = astb->node;
+        astb->node->prevSibling = astb->node;
+        astb->node->kind = mtcc_ASTNodeKind_Root;
+
+        astb->ppdirective->expansion = astb->node;
+    } else {
+        mtcc_assert(!"unimplemented");
+    }
+
+    return action;
 }
 
 mtcc_PUBLICAPI void
-mtcc_astBuilderSrcDone(mtcc_ASTBuilder* astb) {
+mtcc_astBuilderEndPPInclude(mtcc_ASTBuilder* astb) {
     mtcc_assert(astb->nodesBeforeExpansion);
     astb->node = astb->nodesBeforeExpansion->node;
     astb->nodesBeforeExpansion = astb->nodesBeforeExpansion->prev;
