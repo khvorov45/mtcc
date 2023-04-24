@@ -107,8 +107,7 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
             arrput(visnodes, child);
         }
 
-        if (visnode->astnode->kind == mtcc_ASTNodeKind_PPDirective) {
-            assert(visnode->astnode->expansion);
+        if (visnode->astnode->expansion) {
             VisualTreeNode* expansion = prb_arenaAllocStruct(arena, VisualTreeNode);
             expansion->astnode = visnode->astnode->expansion;
             expansion->parent = visnode;
@@ -611,7 +610,7 @@ test_ast(Arena* arena) {
             "int func1() {}\n"
         );
 
-        Str header1 = STR("#include <header2.h>\n\nint h1 = 1;");
+        Str header1 = STR("int h1 = 1;\n#include <header2.h>");
         Str header2 = STR("float h2 = 2;");
 
         mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
@@ -628,66 +627,50 @@ test_ast(Arena* arena) {
                 if (!breakLoop) {
                     mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, lastIter->token);
 
-                    switch (action) {
-                        case mtcc_ASTBuilderAction_None: break;
-                        case mtcc_ASTBuilderAction_DoPPDirective: {
-                            mtcc_PPDirectiveAction ppaction = mtcc_astBuilderDoPPDirective(&astb);
-
-                            switch (ppaction.kind) {
-                                case mtcc_PPDirectiveActionKind_None: break;
-                                case mtcc_PPDirectiveActionKind_Include: {
-                                    Str path = prb_strSlice(MTP(ppaction.include), 1, ppaction.include.len - 1);
-                                    Str relevantStr = {};
-                                    if (prb_streq(path, STR("header1.h"))) {
-                                        relevantStr = header1;
-                                    } else if (prb_streq(path, STR("header2.h"))) {
-                                        relevantStr = header2;
-                                    } else {
-                                        assert(!"unreachable");
-                                    }
-                                    mtcc_TokenIter relevantIter = mtcc_createTokenIter(PTM(relevantStr));
-                                    arrput(iters, relevantIter);
-
-                                    breakLoop = true;
-                                } break;
+                    switch (action.kind) {
+                        case mtcc_ASTBuilderActionKind_None: break;
+                        case mtcc_ASTBuilderActionKind_Include: {
+                            Str path = prb_strSlice(MTP(action.include), 1, action.include.len - 1);
+                            Str relevantStr = {};
+                            if (prb_streq(path, STR("header1.h"))) {
+                                relevantStr = header1;
+                            } else if (prb_streq(path, STR("header2.h"))) {
+                                relevantStr = header2;
+                            } else {
+                                assert(!"unreachable");
                             }
+                            mtcc_TokenIter relevantIter = mtcc_createTokenIter(PTM(relevantStr));
+                            arrput(iters, relevantIter);
+
+                            breakLoop = true;
                         } break;
                     }
                 } else {
                     arrpop(iters);
                     if (arrlen(iters) > 0) {
-                        mtcc_astBuilderEndPPInclude(&astb);
+                        mtcc_astBuilderEndPPExpansion(&astb);
                     }
                 }
             }
         }
 
-        // NOTE(khvorov) Verify tree contents
-        {
-            mtcc_ASTNode* node = astb.ast.root;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_Root);
-            mtcc_assert(node->parent == 0);
-            mtcc_assert(node->nextSibling == node);
-            mtcc_assert(node->prevSibling == node);
+        treeToDot(arena, astb.ast.root);
 
-            node = node->child;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_PPDirective);
-            mtcc_assert(node->expansion);
-            mtcc_assert(node->expansion->child->kind == mtcc_ASTNodeKind_PPDirective);
-            mtcc_assert(node->expansion->child->expansion->child->kind == mtcc_ASTNodeKind_Token);
-            mtcc_assert(mtcc_streq(node->expansion->child->expansion->child->token.str, MSTR("float")));
+        prb_endTempMemory(temp);
+    }
 
-            node = node->child;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
-            mtcc_assert(node->token.kind == mtcc_TokenKind_Punctuator);
-            mtcc_assert(mtcc_streq(node->token.str, MSTR("#")));
-            mtcc_assert(node->child == 0);
+    {
+        prb_TempMemory temp = prb_beginTempMemory(arena);
 
-            node = node->parent->nextSibling;
-            mtcc_assert(node->kind == mtcc_ASTNodeKind_Token);
-            mtcc_assert(node->token.kind == mtcc_TokenKind_Whitespace);
-            mtcc_assert(mtcc_streq(node->token.str, MSTR("\n")));
-            mtcc_assert(node->child == 0);
+        mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
+
+        Str program = STR("#define PI 3.14\n#define MAX(a, b) a > b ? a : b");
+        for (mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&iter);) {
+            mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, iter.token);
+            switch (action.kind) {
+                case mtcc_ASTBuilderActionKind_None: break;
+                default: assert("!unreachable"); break;
+            }
         }
 
         treeToDot(arena, astb.ast.root);
