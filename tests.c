@@ -630,6 +630,8 @@ test_ast(Arena* arena) {
                     switch (action.kind) {
                         case mtcc_ASTBuilderActionKind_None: break;
                         case mtcc_ASTBuilderActionKind_Include: {
+                            mtcc_astBuilderBeginExpansion(&astb, action.node);
+
                             Str path = prb_strSlice(MTP(action.include), 1, action.include.len - 1);
                             Str relevantStr = {};
                             if (prb_streq(path, STR("header1.h"))) {
@@ -648,7 +650,7 @@ test_ast(Arena* arena) {
                 } else {
                     arrpop(iters);
                     if (arrlen(iters) > 0) {
-                        mtcc_astBuilderEndPPExpansion(&astb);
+                        mtcc_astBuilderEndExpansion(&astb);
                     }
                 }
             }

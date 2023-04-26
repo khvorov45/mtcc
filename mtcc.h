@@ -527,7 +527,6 @@ typedef struct mtcc_ASTBuilder {
     mtcc_Arena              output;
     mtcc_ASTNodeStackEntry* nodesBeforeExpansion;
     mtcc_ASTBuilderState    state;
-    mtcc_ASTNode*           ppdirective;
 } mtcc_ASTBuilder;
 
 mtcc_PUBLICAPI mtcc_ASTBuilder
@@ -572,7 +571,24 @@ mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
 }
 
 mtcc_PUBLICAPI void
-mtcc_astBuilderEndPPExpansion(mtcc_ASTBuilder* astb) {
+mtcc_astBuilderBeginExpansion(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
+    // TODO(khvorov) Freelist?
+    mtcc_ASTNodeStackEntry* entry = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNodeStackEntry);
+    entry->node = astb->node;
+    entry->prev = astb->nodesBeforeExpansion;
+    astb->nodesBeforeExpansion = entry;
+
+    // TODO(khvorov) Compress?
+    astb->node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    astb->node->nextSibling = astb->node;
+    astb->node->prevSibling = astb->node;
+    astb->node->kind = mtcc_ASTNodeKind_Root;
+
+    node->expansion = astb->node;
+}
+
+mtcc_PUBLICAPI void
+mtcc_astBuilderEndExpansion(mtcc_ASTBuilder* astb) {
     mtcc_assert(astb->nodesBeforeExpansion);
     astb->node = astb->nodesBeforeExpansion->node;
     astb->nodesBeforeExpansion = astb->nodesBeforeExpansion->prev;
@@ -586,6 +602,7 @@ typedef enum mtcc_ASTBuilderActionKind {
 typedef struct mtcc_ASTBuilderAction {
     mtcc_ASTBuilderActionKind kind;
     mtcc_Str                  include;
+    mtcc_ASTNode*             node;
 } mtcc_ASTBuilderAction;
 
 mtcc_PUBLICAPI mtcc_ASTBuilderAction
@@ -602,14 +619,12 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
                     if (token.str.len == 1 && token.str.ptr[0] == '#') {
                         astb->node->kind = mtcc_ASTNodeKind_PPDirective;
                         astb->state = mtcc_ASTBuilderState_Pound;
-                        astb->ppdirective = astb->node;
                         mtcc_astBuilderPushChild(astb);
                     }
                 } break;
 
                 default: break;
             }
-
         } break;
 
         case mtcc_ASTNodeKind_PPDirective: {
@@ -626,9 +641,11 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
+                // TODO(khvorov) Probably parse out the full directive here instead of doing it on the fly?
                 mtcc_astBuilderPushSibling(astb);
                 astb->state = mtcc_ASTBuilderState_None;
             } else {
+                mtcc_ASTNode* ppdirective = astb->node;
                 mtcc_astBuilderPushChild(astb);
 
                 if (astb->state == mtcc_ASTBuilderState_Pound && token.kind == mtcc_TokenKind_Ident) {
@@ -641,9 +658,9 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
                     astb->state = mtcc_ASTBuilderState_None;
                     result.kind = mtcc_ASTBuilderActionKind_Include;
                     result.include = token.str;
+                    result.node = ppdirective;
                 }
             }
-
         } break;
 
         case mtcc_ASTNodeKind_Token: mtcc_assert(!"unreachable"); break;
@@ -652,23 +669,6 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
     astb->node->kind = mtcc_ASTNodeKind_Token;
     astb->node->token = token;
     astb->node = astb->node->parent;
-
-    if (result.kind == mtcc_ASTBuilderActionKind_Include) {
-        // TODO(khvorov) Freelist?
-        mtcc_ASTNodeStackEntry* entry = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNodeStackEntry);
-        entry->node = astb->node;
-        entry->prev = astb->nodesBeforeExpansion;
-        astb->nodesBeforeExpansion = entry;
-
-        // TODO(khvorov) Compress?
-        astb->node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
-        astb->node->nextSibling = astb->node;
-        astb->node->prevSibling = astb->node;
-        astb->node->kind = mtcc_ASTNodeKind_Root;
-
-        astb->ppdirective->expansion = astb->node;
-        astb->ppdirective = 0;
-    }
 
     return result;
 }
