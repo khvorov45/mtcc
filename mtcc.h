@@ -515,18 +515,11 @@ typedef struct mtcc_ASTNodeStackEntry {
     mtcc_ASTNodeStackEntry* prev;
 } mtcc_ASTNodeStackEntry;
 
-typedef enum mtcc_ASTBuilderState {
-    mtcc_ASTBuilderState_None,
-    mtcc_ASTBuilderState_Pound,
-    mtcc_ASTBuilderState_PoundInclude,
-} mtcc_ASTBuilderState;
-
 typedef struct mtcc_ASTBuilder {
     mtcc_AST                ast;
     mtcc_ASTNode*           node;
     mtcc_Arena              output;
     mtcc_ASTNodeStackEntry* nodesBeforeExpansion;
-    mtcc_ASTBuilderState    state;
 } mtcc_ASTBuilder;
 
 mtcc_PUBLICAPI mtcc_ASTBuilder
@@ -594,6 +587,55 @@ mtcc_astBuilderEndExpansion(mtcc_ASTBuilder* astb) {
     astb->nodesBeforeExpansion = astb->nodesBeforeExpansion->prev;
 }
 
+mtcc_PUBLICAPI void
+mtcc_astBuilderAddDefine(mtcc_ASTBuilder* astb, mtcc_ASTNode* directive) {
+    // TODO(khvorov) Compress?
+    mtcc_assert(directive->kind == mtcc_ASTNodeKind_PPDirective);
+    mtcc_assert(directive->child);
+    mtcc_assert(directive->child->kind == mtcc_ASTNodeKind_Token);
+    mtcc_assert(directive->child->token.kind == mtcc_TokenKind_Punctuator);
+    mtcc_assert(mtcc_streq(directive->child->token.str, mtcc_STR("#")));
+
+    mtcc_ASTNode* directiveName = 0;
+    for (mtcc_ASTNode* child = directive->child->nextSibling; child != directive->child; child = child->nextSibling) {
+        mtcc_assert(child->kind == mtcc_ASTNodeKind_Token);
+        mtcc_TokenKind kd = child->token.kind;
+        if (kd == mtcc_TokenKind_EscapedNewline || kd == mtcc_TokenKind_Whitespace || kd == mtcc_TokenKind_Comment) {
+            continue;
+        }
+        mtcc_assert(kd == mtcc_TokenKind_Ident);
+        directiveName = child;
+        break;
+    }
+    mtcc_assert(directiveName);
+    mtcc_assert(mtcc_streq(directiveName->token.str, mtcc_STR("define")));
+
+    mtcc_ASTNode* macroName = 0;
+    for (mtcc_ASTNode* child = directiveName->nextSibling; child != directive->child; child = child->nextSibling) {
+        mtcc_assert(child->kind == mtcc_ASTNodeKind_Token);
+        mtcc_TokenKind kd = child->token.kind;
+        if (kd == mtcc_TokenKind_EscapedNewline || kd == mtcc_TokenKind_Whitespace || kd == mtcc_TokenKind_Comment) {
+            continue;
+        }
+        mtcc_assert(kd == mtcc_TokenKind_Ident);
+        macroName = child;
+        break;
+    }
+    mtcc_assert(macroName);
+
+    // TODO(khvorov) Finish
+}
+
+typedef enum mtcc_PPDirectiveKind {
+    mtcc_PPDirectiveKind_None,
+    mtcc_PPDirectiveKind_Include,
+} mtcc_PPDirectiveKind;
+
+typedef struct mtcc_PPDirective {
+    mtcc_PPDirectiveKind kind;
+    mtcc_Str             include;
+} mtcc_PPDirective;
+
 typedef enum mtcc_ASTBuilderActionKind {
     mtcc_ASTBuilderActionKind_None,
     mtcc_ASTBuilderActionKind_Include,
@@ -611,14 +653,12 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
 
     switch (astb->node->kind) {
         case mtcc_ASTNodeKind_Root: {
-            mtcc_assert(astb->state == mtcc_ASTBuilderState_None);
             mtcc_astBuilderPushChild(astb);
 
             switch (token.kind) {
                 case mtcc_TokenKind_Punctuator: {
                     if (token.str.len == 1 && token.str.ptr[0] == '#') {
                         astb->node->kind = mtcc_ASTNodeKind_PPDirective;
-                        astb->state = mtcc_ASTBuilderState_Pound;
                         mtcc_astBuilderPushChild(astb);
                     }
                 } break;
@@ -641,25 +681,64 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
-                // TODO(khvorov) Probably parse out the full directive here instead of doing it on the fly?
-                mtcc_astBuilderPushSibling(astb);
-                astb->state = mtcc_ASTBuilderState_None;
-            } else {
-                mtcc_ASTNode* ppdirective = astb->node;
-                mtcc_astBuilderPushChild(astb);
+                mtcc_PPDirective directive = {};
+                {
+                    mtcc_ASTNode* dirRoot = astb->node;
 
-                if (astb->state == mtcc_ASTBuilderState_Pound && token.kind == mtcc_TokenKind_Ident) {
-                    if (mtcc_streq(token.str, mtcc_STR("include"))) {
-                        astb->state = mtcc_ASTBuilderState_PoundInclude;
-                    } else {
-                        astb->state = mtcc_ASTBuilderState_None;
+                    // TODO(khvorov) Compress?
+                    mtcc_assert(dirRoot->kind == mtcc_ASTNodeKind_PPDirective);
+                    mtcc_assert(dirRoot->child);
+                    mtcc_assert(dirRoot->child->kind == mtcc_ASTNodeKind_Token);
+                    mtcc_assert(dirRoot->child->token.kind == mtcc_TokenKind_Punctuator);
+                    mtcc_assert(mtcc_streq(dirRoot->child->token.str, mtcc_STR("#")));
+
+                    mtcc_ASTNode* directiveName = 0;
+                    for (mtcc_ASTNode* child = dirRoot->child->nextSibling; child != dirRoot->child; child = child->nextSibling) {
+                        mtcc_assert(child->kind == mtcc_ASTNodeKind_Token);
+                        mtcc_TokenKind kd = child->token.kind;
+                        if (kd == mtcc_TokenKind_EscapedNewline || kd == mtcc_TokenKind_Whitespace || kd == mtcc_TokenKind_Comment) {
+                            continue;
+                        }
+                        mtcc_assert(kd == mtcc_TokenKind_Ident);
+                        directiveName = child;
+                        break;
                     }
-                } else if (astb->state == mtcc_ASTBuilderState_PoundInclude && token.kind == mtcc_TokenKind_HeaderName) {
-                    astb->state = mtcc_ASTBuilderState_None;
-                    result.kind = mtcc_ASTBuilderActionKind_Include;
-                    result.include = token.str;
-                    result.node = ppdirective;
+
+                    mtcc_assert(directiveName);
+                    if (mtcc_streq(directiveName->token.str, mtcc_STR("include"))) {
+                        mtcc_Str include = {};
+                        for (mtcc_ASTNode* child = directiveName->nextSibling; child != dirRoot->child; child = child->nextSibling) {
+                            mtcc_assert(child->kind == mtcc_ASTNodeKind_Token);
+                            mtcc_TokenKind kd = child->token.kind;
+                            if (kd == mtcc_TokenKind_EscapedNewline || kd == mtcc_TokenKind_Whitespace || kd == mtcc_TokenKind_Comment) {
+                                continue;
+                            }
+                            mtcc_assert(kd == mtcc_TokenKind_HeaderName);
+                            include = child->token.str;
+                            break;
+                        }
+
+                        mtcc_assert(include.ptr);
+                        directive.kind = mtcc_PPDirectiveKind_Include;
+                        directive.include = include;
+                    } else if (mtcc_streq(directiveName->token.str, mtcc_STR("define"))) {
+                        mtcc_astBuilderAddDefine(astb, astb->node);
+                    } else {
+                        mtcc_assert(!"unimplemented");
+                    }
                 }
+
+                switch (directive.kind) {
+                    case mtcc_PPDirectiveKind_None: break;
+                    case mtcc_PPDirectiveKind_Include: {
+                        result.kind = mtcc_ASTBuilderActionKind_Include;
+                        result.include = directive.include;
+                        result.node = astb->node;
+                    } break;
+                }
+                mtcc_astBuilderPushSibling(astb);
+            } else {
+                mtcc_astBuilderPushChild(astb);
             }
         } break;
 
