@@ -666,7 +666,12 @@ test_ast(Arena* arena) {
 
         mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
 
-        Str program = STR("#define PI 3.14\n#define MAX(a, b) a > b ? a : b");
+        Str program = STR(
+            "#define PI2 PI + 2\n"
+            "#define PI 3.14\n"
+            "double x = PI2;"
+        );
+
         for (mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&iter);) {
             mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, iter.token);
             switch (action.kind) {

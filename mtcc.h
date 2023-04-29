@@ -539,8 +539,7 @@ mtcc_astNextSiblingIdentSkipWhitespaceAndComments(mtcc_ASTNode* start, mtcc_ASTN
 
 typedef struct mtcc_PPDefine {
     mtcc_Str      name;
-    mtcc_ASTNode* replaceFirst;
-    mtcc_ASTNode* replaceLast;
+    mtcc_ASTNode* replace;
 } mtcc_PPDefine;
 
 typedef enum mtcc_PPDirectiveKind {
@@ -557,47 +556,24 @@ typedef struct mtcc_PPDirective {
     };
 } mtcc_PPDirective;
 
-mtcc_PUBLICAPI mtcc_PPDirective
-mtcc_astParsePPDirective(mtcc_ASTNode* dirRoot) {
-    mtcc_PPDirective result = {};
-
-    mtcc_assert(dirRoot->kind == mtcc_ASTNodeKind_PPDirective);
-    mtcc_assert(dirRoot->child);
-    mtcc_assert(dirRoot->child->kind == mtcc_ASTNodeKind_Token);
-    mtcc_assert(dirRoot->child->token.kind == mtcc_TokenKind_Punctuator);
-    mtcc_assert(mtcc_streq(dirRoot->child->token.str, mtcc_STR("#")));
-
-    mtcc_ASTNode* directiveName = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(dirRoot->child, dirRoot->child);
-
-    if (mtcc_streq(directiveName->token.str, mtcc_STR("include"))) {
-        mtcc_ASTNode* include = mtcc_astNextSiblingTokenSkipWhitespaceAndComments(directiveName, dirRoot->child);
-        mtcc_assert(include->token.kind == mtcc_TokenKind_HeaderName);
-        result.kind = mtcc_PPDirectiveKind_Include;
-        result.include = include->token.str;
-    } else if (mtcc_streq(directiveName->token.str, mtcc_STR("define"))) {
-        result.kind = mtcc_PPDirectiveKind_Define;
-        mtcc_ASTNode* defineName = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(directiveName, dirRoot->child);
-        result.define.name = defineName->token.str;
-        result.define.replaceFirst = mtcc_astNextSiblingNodeSkipWhitespaceAndComments(defineName, dirRoot->child);
-        result.define.replaceLast = dirRoot->child->prevSibling;
-    } else {
-        mtcc_assert(!"unimplemented");
-    }
-
-    return result;
-}
-
 typedef struct mtcc_ASTNodeStackEntry mtcc_ASTNodeStackEntry;
 typedef struct mtcc_ASTNodeStackEntry {
     mtcc_ASTNode*           node;
     mtcc_ASTNodeStackEntry* prev;
 } mtcc_ASTNodeStackEntry;
 
+typedef struct mtcc_PPDefineEntry mtcc_PPDefineEntry;
+typedef struct mtcc_PPDefineEntry {
+    mtcc_PPDefine       define;
+    mtcc_PPDefineEntry* prev;
+} mtcc_PPDefineEntry;
+
 typedef struct mtcc_ASTBuilder {
     mtcc_AST                ast;
     mtcc_ASTNode*           node;
     mtcc_Arena              output;
     mtcc_ASTNodeStackEntry* nodesBeforeExpansion;
+    mtcc_PPDefineEntry*     defines;
 } mtcc_ASTBuilder;
 
 mtcc_PUBLICAPI mtcc_ASTBuilder
@@ -610,6 +586,15 @@ mtcc_createASTBuilder(mtcc_Bytes output) {
 
     astb.ast.root = astb.node;
     return astb;
+}
+
+mtcc_PRIVATEAPI mtcc_ASTNode*
+mtcc_astBuilderNewRoot(mtcc_ASTBuilder* astb) {
+    mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->nextSibling = node;
+    node->prevSibling = node;
+    node->kind = mtcc_ASTNodeKind_Root;
+    return node;
 }
 
 mtcc_PRIVATEAPI void
@@ -649,11 +634,7 @@ mtcc_astBuilderBeginExpansion(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
     entry->prev = astb->nodesBeforeExpansion;
     astb->nodesBeforeExpansion = entry;
 
-    // TODO(khvorov) Compress?
-    astb->node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
-    astb->node->nextSibling = astb->node;
-    astb->node->prevSibling = astb->node;
-    astb->node->kind = mtcc_ASTNodeKind_Root;
+    astb->node = mtcc_astBuilderNewRoot(astb);
 
     node->expansion = astb->node;
 }
@@ -665,8 +646,64 @@ mtcc_astBuilderEndExpansion(mtcc_ASTBuilder* astb) {
     astb->nodesBeforeExpansion = astb->nodesBeforeExpansion->prev;
 }
 
+mtcc_PUBLICAPI mtcc_PPDirective
+mtcc_astParsePPDirective(mtcc_ASTBuilder* astb, mtcc_ASTNode* dirRoot) {
+    mtcc_PPDirective result = {};
+
+    mtcc_assert(dirRoot->kind == mtcc_ASTNodeKind_PPDirective);
+    mtcc_assert(dirRoot->child);
+    mtcc_assert(dirRoot->child->kind == mtcc_ASTNodeKind_Token);
+    mtcc_assert(dirRoot->child->token.kind == mtcc_TokenKind_Punctuator);
+    mtcc_assert(mtcc_streq(dirRoot->child->token.str, mtcc_STR("#")));
+
+    mtcc_ASTNode* directiveName = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(dirRoot->child, dirRoot->child);
+
+    if (mtcc_streq(directiveName->token.str, mtcc_STR("include"))) {
+        mtcc_ASTNode* include = mtcc_astNextSiblingTokenSkipWhitespaceAndComments(directiveName, dirRoot->child);
+        mtcc_assert(include->token.kind == mtcc_TokenKind_HeaderName);
+        result.kind = mtcc_PPDirectiveKind_Include;
+        result.include = include->token.str;
+    } else if (mtcc_streq(directiveName->token.str, mtcc_STR("define"))) {
+        result.kind = mtcc_PPDirectiveKind_Define;
+        mtcc_ASTNode* defineName = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(directiveName, dirRoot->child);
+        result.define.name = defineName->token.str;
+        mtcc_ASTNode* replaceFirst = mtcc_astNextSiblingNodeSkipWhitespaceAndComments(defineName, dirRoot->child);
+        mtcc_ASTNode* replaceLast = dirRoot->child->prevSibling;
+        result.define.replace = mtcc_astBuilderNewRoot(astb);
+        result.define.replace->child = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+        *result.define.replace->child = *replaceFirst;
+        if (replaceFirst != replaceLast) {
+            result.define.replace->child->prevSibling = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+            *result.define.replace->child->prevSibling = *replaceLast;
+            result.define.replace->child->prevSibling->nextSibling = result.define.replace->child;
+        }
+    } else {
+        mtcc_assert(!"unimplemented");
+    }
+
+    return result;
+}
+
 mtcc_PUBLICAPI void
 mtcc_astBuilderAddDefine(mtcc_ASTBuilder* astb, mtcc_PPDefine define) {
+    mtcc_PPDefineEntry entry = {.define = define, .prev = astb->defines};
+    astb->defines = mtcc_arenaAllocStruct(&astb->output, mtcc_PPDefineEntry);
+    *astb->defines = entry;
+}
+
+mtcc_PUBLICAPI mtcc_PPDefine*
+mtcc_astBuilderLookupDefine(mtcc_PPDefineEntry* entries, mtcc_Str ident) {
+    mtcc_PPDefine* result = 0;
+
+    // TODO(khvorov) Better-than-linear search
+    for (mtcc_PPDefineEntry* entry = entries; entry; entry = entry->prev) {
+        if (mtcc_streq(entry->define.name, ident)) {
+            result = &entry->define;
+            break;
+        }
+    }
+
+    return result;
 }
 
 typedef enum mtcc_ASTBuilderActionKind {
@@ -696,6 +733,15 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
                     }
                 } break;
 
+                case mtcc_TokenKind_Ident: {
+                    mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, token.str);
+                    if (define) {
+                        // TODO(khvorov) The replacement subtree needs to be build here actually.
+                        // The actual define struct should probably just contain replaceFirst/replaceLast
+                        astb->node->expansion = define->replace;
+                    }
+                } break;
+
                 default: break;
             }
         } break;
@@ -714,7 +760,7 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
-                mtcc_PPDirective directive = mtcc_astParsePPDirective(astb->node);
+                mtcc_PPDirective directive = mtcc_astParsePPDirective(astb, astb->node);
                 switch (directive.kind) {
                     case mtcc_PPDirectiveKind_Include: {
                         result.kind = mtcc_ASTBuilderActionKind_Include;
