@@ -610,7 +610,7 @@ test_ast(Arena* arena) {
             "int func1() {}\n"
         );
 
-        Str header1 = STR("int h1 = 1;\n#include <header2.h>");
+        Str header1 = STR("int h1 = 1;\n#include <header2.h>\n");
         Str header2 = STR("float h2 = 2;");
 
         mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
