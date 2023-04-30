@@ -600,9 +600,11 @@ mtcc_astBuilderNewRoot(mtcc_ASTBuilder* astb) {
     return node;
 }
 
-mtcc_PRIVATEAPI void
-mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
+mtcc_PRIVATEAPI mtcc_ASTNode*
+mtcc_astBuilderPushChildToken(mtcc_ASTBuilder* astb, mtcc_Token token) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->kind = mtcc_ASTNodeKind_Token;
+    node->token = token;
     node->parent = astb->node;
     if (astb->node->child) {
         node->nextSibling = astb->node->child;
@@ -614,19 +616,21 @@ mtcc_astBuilderPushChild(mtcc_ASTBuilder* astb) {
         node->prevSibling = node;
         astb->node->child = node;
     }
-    astb->node = node;
+    return node;
 }
 
-mtcc_PRIVATEAPI void
-mtcc_astBuilderPushSibling(mtcc_ASTBuilder* astb) {
+mtcc_PRIVATEAPI mtcc_ASTNode*
+mtcc_astBuilderPushSiblingToken(mtcc_ASTBuilder* astb, mtcc_Token token) {
     mtcc_ASTNode* node = mtcc_arenaAllocStruct(&astb->output, mtcc_ASTNode);
+    node->kind = mtcc_ASTNodeKind_Token;
+    node->token = token;
     node->parent = astb->node->parent;
     mtcc_assert(node->parent);
     node->nextSibling = astb->node->nextSibling;
     node->prevSibling = astb->node;
     node->nextSibling->prevSibling = node;
     node->prevSibling->nextSibling = node;
-    astb->node = node;
+    return node;
 }
 
 mtcc_PUBLICAPI void
@@ -734,17 +738,47 @@ mtcc_PUBLICAPI mtcc_ASTBuilderAction
 mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
     mtcc_ASTBuilderAction result = {};
 
-    // NOTE(khvorov) Modify the tree
     switch (astb->node->kind) {
         case mtcc_ASTNodeKind_Root: {
-            mtcc_astBuilderPushChild(astb);
+            mtcc_ASTNode* child = mtcc_astBuilderPushChildToken(astb, token);
             switch (token.kind) {
                 case mtcc_TokenKind_Punctuator: {
                     if (token.str.len == 1 && token.str.ptr[0] == '#') {
-                        astb->node->kind = mtcc_ASTNodeKind_PPDirective;
-                        mtcc_astBuilderPushChild(astb);
+                        child->kind = mtcc_ASTNodeKind_PPDirective;
+                        child->token = (mtcc_Token) {};
+                        astb->node = child;
+                        mtcc_astBuilderPushChildToken(astb, token);
                     }
                 } break;
+
+                case mtcc_TokenKind_Ident: {
+                    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, child);
+                    while (astb->nodesToExpand) {
+                        mtcc_ASTNode* nodeToExpand = mtcc_astBuilderNodeStackPop(astb, &astb->nodesToExpand);
+                        mtcc_assert(nodeToExpand->kind == mtcc_ASTNodeKind_Token);
+                        mtcc_assert(nodeToExpand->token.kind == mtcc_TokenKind_Ident);
+                        mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, nodeToExpand->token.str);
+                        if (define) {
+                            mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
+                            for (mtcc_ASTNode* replace = define->replaceFirst;; replace = replace->nextSibling) {
+                                mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
+                                mtcc_assert(replace->child == 0);
+
+                                mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
+
+                                if (replace->token.kind == mtcc_TokenKind_Ident) {
+                                    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, replaceCopy);
+                                }
+
+                                if (replace == define->replaceLast) {
+                                    break;
+                                }
+                            }
+                            mtcc_astBuilderEndExpansion(astb);
+                        }
+                    }
+                } break;
+
                 default: break;
             }
         } break;
@@ -777,52 +811,16 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
 
                     default: mtcc_assert(!"not sure what to do here");
                 }
-                mtcc_astBuilderPushSibling(astb);
+
+                mtcc_astBuilderPushSiblingToken(astb, token);
+                astb->node = astb->node->parent;
             } else {
-                mtcc_astBuilderPushChild(astb);
+                mtcc_astBuilderPushChildToken(astb, token);
             }
         } break;
 
         case mtcc_ASTNodeKind_Token: mtcc_assert(!"unreachable"); break;
     }
-
-    astb->node->kind = mtcc_ASTNodeKind_Token;
-    astb->node->token = token;
-
-    // NOTE(khvorov) Expand identifier if necessary
-    if (astb->node->parent->kind == mtcc_ASTNodeKind_Root && token.kind == mtcc_TokenKind_Ident) {
-        mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, astb->node);
-        while (astb->nodesToExpand) {
-            mtcc_ASTNode* nodeToExpand = mtcc_astBuilderNodeStackPop(astb, &astb->nodesToExpand);
-            mtcc_assert(nodeToExpand->kind == mtcc_ASTNodeKind_Token);
-            mtcc_assert(nodeToExpand->token.kind == mtcc_TokenKind_Ident);
-            mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, nodeToExpand->token.str);
-            if (define) {
-                mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
-                for (mtcc_ASTNode* replace = define->replaceFirst;; replace = replace->nextSibling) {
-                    mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
-                    mtcc_assert(replace->child == 0);
-
-                    mtcc_astBuilderPushChild(astb);
-                    astb->node->kind = replace->kind;
-                    astb->node->token = replace->token;
-
-                    if (replace->token.kind == mtcc_TokenKind_Ident) {
-                        mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, astb->node);
-                    }
-
-                    astb->node = astb->node->parent;
-
-                    if (replace == define->replaceLast) {
-                        break;
-                    }
-                }
-                mtcc_astBuilderEndExpansion(astb);
-            }
-        }
-    }
-
-    astb->node = astb->node->parent;
 
     return result;
 }
