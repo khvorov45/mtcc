@@ -478,19 +478,10 @@ mtcc_tokenIterNext(mtcc_TokenIter* iter) {
     return result;
 }
 
-typedef enum mtcc_ASTSourceKind {
-    mtcc_ASTSourceKind_None,
-    mtcc_ASTSourceKind_Include,
-} mtcc_ASTSourceKind;
-
-typedef struct mtcc_ASTSource {
-    mtcc_ASTSourceKind kind;
-    mtcc_Str           include;
-} mtcc_ASTSource;
-
 typedef enum mtcc_ASTNodeKind {
     mtcc_ASTNodeKind_Root,
     mtcc_ASTNodeKind_PPDirective,
+    mtcc_ASTNodeKind_MacroCall,
     mtcc_ASTNodeKind_Token,
 } mtcc_ASTNodeKind;
 
@@ -537,10 +528,26 @@ mtcc_astNextSiblingIdentSkipWhitespaceAndComments(mtcc_ASTNode* start, mtcc_ASTN
     return result;
 }
 
+typedef enum mtcc_PPDefineKind {
+    mtcc_PPDefineKind_Obj,
+    mtcc_PPDefineKind_Func,
+} mtcc_PPDefineKind;
+
 typedef struct mtcc_PPDefine {
-    mtcc_Str      name;
-    mtcc_ASTNode* replaceFirst;
-    mtcc_ASTNode* replaceLast;
+    mtcc_Str          name;
+    mtcc_PPDefineKind kind;
+    union {
+        struct {
+            mtcc_ASTNode* replaceFirst;
+            mtcc_ASTNode* replaceLast;
+        } obj;
+        struct {
+            mtcc_Str*     params;
+            intptr_t      paramCount;
+            mtcc_ASTNode* bodyFirst;
+            mtcc_ASTNode* bodyLast;
+        } func;
+    };
 } mtcc_PPDefine;
 
 typedef enum mtcc_PPDirectiveKind {
@@ -672,7 +679,7 @@ mtcc_astBuilderEndExpansion(mtcc_ASTBuilder* astb) {
 }
 
 mtcc_PUBLICAPI mtcc_PPDirective
-mtcc_astParsePPDirective(mtcc_ASTNode* dirRoot) {
+mtcc_astParsePPDirective(mtcc_ASTBuilder* astb, mtcc_ASTNode* dirRoot) {
     mtcc_PPDirective result = {};
 
     mtcc_assert(dirRoot->kind == mtcc_ASTNodeKind_PPDirective);
@@ -691,9 +698,39 @@ mtcc_astParsePPDirective(mtcc_ASTNode* dirRoot) {
     } else if (mtcc_streq(directiveName->token.str, mtcc_STR("define"))) {
         result.kind = mtcc_PPDirectiveKind_Define;
         mtcc_ASTNode* defineName = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(directiveName, dirRoot->child);
+        result.define.kind = mtcc_PPDefineKind_Obj;
         result.define.name = defineName->token.str;
-        result.define.replaceFirst = mtcc_astNextSiblingNodeSkipWhitespaceAndComments(defineName, dirRoot->child);
-        result.define.replaceLast = dirRoot->child->prevSibling;
+        result.define.obj.replaceFirst = mtcc_astNextSiblingNodeSkipWhitespaceAndComments(defineName, dirRoot->child);
+        result.define.obj.replaceLast = dirRoot->child->prevSibling;
+
+        mtcc_assert(result.define.obj.replaceFirst->kind == mtcc_ASTNodeKind_Token);
+        {
+            mtcc_Token tok = result.define.obj.replaceFirst->token;
+            if (tok.kind == mtcc_TokenKind_Punctuator && mtcc_streq(tok.str, mtcc_STR("("))) {
+                result.define.kind = mtcc_PPDefineKind_Func;
+                mtcc_ASTNode* paramStart = result.define.obj.replaceFirst;
+                result.define.func.paramCount = 0;
+                mtcc_arenaAlignFreePtr(&astb->output, alignof(mtcc_Str));
+                result.define.func.params = mtcc_arenaFreePtr(&astb->output);
+
+                mtcc_ASTNode* closeParen = 0;
+                for (mtcc_ASTNode* param = paramStart->nextSibling;; param = param->nextSibling) {
+                    mtcc_assert(param->kind == mtcc_ASTNodeKind_Token);
+                    if (param->token.kind == mtcc_TokenKind_Punctuator && mtcc_streq(param->token.str, mtcc_STR(")"))) {
+                        closeParen = param;
+                        break;
+                    }
+
+                    if (param->token.kind == mtcc_TokenKind_Ident) {
+                        mtcc_arenaChangeUsed(&astb->output, sizeof(mtcc_Str));
+                        result.define.func.params[result.define.func.paramCount++] = param->token.str;
+                    }
+                }
+
+                result.define.func.bodyFirst = mtcc_astNextSiblingIdentSkipWhitespaceAndComments(closeParen, dirRoot->child);
+                result.define.func.bodyLast = dirRoot->child->prevSibling;
+            }
+        }
     } else {
         mtcc_assert(!"unimplemented");
     }
@@ -721,6 +758,92 @@ mtcc_astBuilderLookupDefine(mtcc_PPDefineEntry* entries, mtcc_Str ident) {
     }
 
     return result;
+}
+
+mtcc_PUBLICAPI void
+mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
+    // TODO(khvorov) Handle empty defines
+
+    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, node);
+    while (astb->nodesToExpand) {
+        mtcc_ASTNode* nodeToExpand = mtcc_astBuilderNodeStackPop(astb, &astb->nodesToExpand);
+
+        switch (nodeToExpand->kind) {
+            case mtcc_ASTNodeKind_Token: {
+                mtcc_assert(nodeToExpand->token.kind == mtcc_TokenKind_Ident);
+                mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, nodeToExpand->token.str);
+                if (define) {
+                    switch (define->kind) {
+                        case mtcc_PPDefineKind_Obj: {
+                            mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
+                            for (mtcc_ASTNode* replace = define->obj.replaceFirst;; replace = replace->nextSibling) {
+                                mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
+                                mtcc_assert(replace->child == 0);
+
+                                mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
+
+                                if (replace->token.kind == mtcc_TokenKind_Ident) {
+                                    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, replaceCopy);
+                                }
+
+                                if (replace == define->obj.replaceLast) {
+                                    break;
+                                }
+                            }
+                            mtcc_astBuilderEndExpansion(astb);
+                        } break;
+
+                        case mtcc_PPDefineKind_Func: {
+                            mtcc_assert(astb->nodesToExpand == 0);
+                            mtcc_Token tok = node->token;
+                            node->kind = mtcc_ASTNodeKind_MacroCall;
+                            node->token = (mtcc_Token) {};
+                            astb->node = node;
+                            mtcc_astBuilderPushChildToken(astb, tok);
+                        } break;
+                    }
+                }
+            } break;
+
+            case mtcc_ASTNodeKind_MacroCall: {
+                mtcc_assert(node->child);
+                mtcc_Str       macroName = node->child->token.str;
+                mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, macroName);
+                mtcc_assert(define);
+                mtcc_assert(define->kind == mtcc_PPDefineKind_Func);
+
+                mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
+                for (mtcc_ASTNode* replace = define->func.bodyFirst;; replace = replace->nextSibling) {
+                    // TODO(khvorov) Expand properly
+                    mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
+                    mtcc_assert(replace->child == 0);
+
+                    mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
+                    
+                    bool isArg = false;
+                    intptr_t argIndex = 0;
+                    for (intptr_t ind = 0; ind < define->func.paramCount; ind++) {
+                        mtcc_Str param = define->func.params[ind];
+                        if (mtcc_streq(param, replaceCopy->token.str)) {
+                            isArg = true;
+                            argIndex = ind;
+                        }
+                    }
+
+                    if (isArg) {
+                        replaceCopy->token.str = mtcc_STR("TEMP");
+                    }
+
+                    if (replace == define->func.bodyLast) {
+                        break;
+                    }
+                }
+                mtcc_astBuilderEndExpansion(astb);
+            } break;
+
+            default: mtcc_assert(!"don't know what to do"); break;
+        }
+    }
 }
 
 typedef enum mtcc_ASTBuilderActionKind {
@@ -752,31 +875,7 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
                 } break;
 
                 case mtcc_TokenKind_Ident: {
-                    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, child);
-                    while (astb->nodesToExpand) {
-                        mtcc_ASTNode* nodeToExpand = mtcc_astBuilderNodeStackPop(astb, &astb->nodesToExpand);
-                        mtcc_assert(nodeToExpand->kind == mtcc_ASTNodeKind_Token);
-                        mtcc_assert(nodeToExpand->token.kind == mtcc_TokenKind_Ident);
-                        mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, nodeToExpand->token.str);
-                        if (define) {
-                            mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
-                            for (mtcc_ASTNode* replace = define->replaceFirst;; replace = replace->nextSibling) {
-                                mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
-                                mtcc_assert(replace->child == 0);
-
-                                mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
-
-                                if (replace->token.kind == mtcc_TokenKind_Ident) {
-                                    mtcc_astBuilderNodeStackPush(astb, &astb->nodesToExpand, replaceCopy);
-                                }
-
-                                if (replace == define->replaceLast) {
-                                    break;
-                                }
-                            }
-                            mtcc_astBuilderEndExpansion(astb);
-                        }
-                    }
+                    mtcc_astBuilderPPexpand(astb, child);
                 } break;
 
                 default: break;
@@ -797,7 +896,7 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             }
 
             if (unescapedNewline) {
-                mtcc_PPDirective directive = mtcc_astParsePPDirective(astb->node);
+                mtcc_PPDirective directive = mtcc_astParsePPDirective(astb, astb->node);
                 switch (directive.kind) {
                     case mtcc_PPDirectiveKind_Include: {
                         result.kind = mtcc_ASTBuilderActionKind_Include;
@@ -816,6 +915,14 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
                 astb->node = astb->node->parent;
             } else {
                 mtcc_astBuilderPushChildToken(astb, token);
+            }
+        } break;
+
+        case mtcc_ASTNodeKind_MacroCall: {
+            mtcc_astBuilderPushChildToken(astb, token);
+            if (token.kind == mtcc_TokenKind_Punctuator && mtcc_streq(token.str, mtcc_STR(")"))) {
+                mtcc_astBuilderPPexpand(astb, astb->node);
+                astb->node = astb->node->parent;
             }
         } break;
 

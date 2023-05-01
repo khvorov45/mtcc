@@ -72,7 +72,11 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
         prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
         switch (visnode->astnode->kind) {
             case mtcc_ASTNodeKind_Root: {
-                prb_addStrSegment(&nodeNameBuilder, "TU");
+                prb_addStrSegment(&nodeNameBuilder, "Root");
+            } break;
+
+            case mtcc_ASTNodeKind_MacroCall: {
+                prb_addStrSegment(&nodeNameBuilder, "MacroCall");
             } break;
 
             case mtcc_ASTNodeKind_PPDirective: {
@@ -89,7 +93,8 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
         prb_GrowingStr lblBuilder = prb_beginStr(arena);
         switch (visnode->astnode->kind) {
             case mtcc_ASTNodeKind_Root:
-            case mtcc_ASTNodeKind_PPDirective: {
+            case mtcc_ASTNodeKind_PPDirective:
+            case mtcc_ASTNodeKind_MacroCall: {
                 prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
             } break;
 
@@ -670,6 +675,29 @@ test_ast(Arena* arena) {
             "#define PI2 PI + 2\n"
             "#define PI 3.14\n"
             "double x = PI2;"
+        );
+
+        for (mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&iter);) {
+            mtcc_ASTBuilderAction action = mtcc_astBuilderNext(&astb, iter.token);
+            switch (action.kind) {
+                case mtcc_ASTBuilderActionKind_None: break;
+                default: assert("!unreachable"); break;
+            }
+        }
+
+        treeToDot(arena, astb.ast.root);
+
+        prb_endTempMemory(temp);
+    }
+
+    {
+        prb_TempMemory temp = prb_beginTempMemory(arena);
+
+        mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
+
+        Str program = STR(
+            "#define LESS2(x) x < 2\n"
+            "LESS2(0)\n"
         );
 
         for (mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&iter);) {
