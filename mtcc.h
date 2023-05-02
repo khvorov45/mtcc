@@ -49,8 +49,9 @@ mtcc_memset(void* ptr1, uint8_t byte, intptr_t bytes) {
     }
 }
 
-#define mtcc_STR(x) \
-    (mtcc_Str) { x, mtcc_strlen(x) }
+// clang-format off
+#define mtcc_STR(x) (mtcc_Str) { x, mtcc_strlen(x) }
+// clang-format on
 
 typedef struct mtcc_Str {
     const char* ptr;
@@ -794,6 +795,9 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
                         } break;
 
                         case mtcc_PPDefineKind_Func: {
+                            // TODO(khvorov) Right here we should figure out if we can just parse out the macro call or not
+                            // and if so then do that and push the new macro call onto the stack of nodes to expand.
+                            // If not then do what's below - i.e. expect more tokens to come to the builder.
                             mtcc_assert(astb->nodesToExpand == 0);
                             mtcc_Token tok = node->token;
                             node->kind = mtcc_ASTNodeKind_MacroCall;
@@ -814,13 +818,13 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
 
                 mtcc_astBuilderBeginExpansion(astb, nodeToExpand);
                 for (mtcc_ASTNode* replace = define->func.bodyFirst;; replace = replace->nextSibling) {
-                    // TODO(khvorov) Expand properly
+                    // TODO(khvorov) Expand properly - replace args and push nodes to the stack to expand
                     mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
                     mtcc_assert(replace->child == 0);
 
                     mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
-                    
-                    bool isArg = false;
+
+                    bool     isArg = false;
                     intptr_t argIndex = 0;
                     for (intptr_t ind = 0; ind < define->func.paramCount; ind++) {
                         mtcc_Str param = define->func.params[ind];
@@ -831,6 +835,8 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
                     }
 
                     if (isArg) {
+                        // TODO(khvorov) This should be replaced with a list of tokens since each argument can be
+                        // a whole expression
                         replaceCopy->token.str = mtcc_STR("TEMP");
                     }
 
