@@ -50,20 +50,13 @@ mtcc_memset(void* ptr1, uint8_t byte, intptr_t bytes) {
 }
 
 // clang-format off
-#define mtcc_STR(x) (mtcc_Str) { x, mtcc_strlen(x) }
+#define mtcc_STR(x) (mtcc_Str) { x, sizeof(x) - 1 }
 // clang-format on
 
 typedef struct mtcc_Str {
     const char* ptr;
     intptr_t    len;
 } mtcc_Str;
-
-mtcc_PRIVATEAPI intptr_t
-mtcc_strlen(const char* ptr) {
-    intptr_t result = 0;
-    for (; ptr[result] != '\0'; result += 1) {}
-    return result;
-}
 
 mtcc_PRIVATEAPI bool
 mtcc_isspace(char ch) {
