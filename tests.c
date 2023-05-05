@@ -71,21 +71,11 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
 
         prb_GrowingStr nodeNameBuilder = prb_beginStr(arena);
         switch (visnode->astnode->kind) {
-            case mtcc_ASTNodeKind_Root: {
-                prb_addStrSegment(&nodeNameBuilder, "Root");
-            } break;
-
-            case mtcc_ASTNodeKind_MacroCall: {
-                prb_addStrSegment(&nodeNameBuilder, "MacroCall");
-            } break;
-
-            case mtcc_ASTNodeKind_PPDirective: {
-                prb_addStrSegment(&nodeNameBuilder, "PPDirective");
-            } break;
-
-            case mtcc_ASTNodeKind_Token: {
-                prb_addStrSegment(&nodeNameBuilder, "Token");
-            } break;
+            case mtcc_ASTNodeKind_Root: prb_addStrSegment(&nodeNameBuilder, "Root"); break;
+            case mtcc_ASTNodeKind_MacroCall: prb_addStrSegment(&nodeNameBuilder, "MacroCall"); break;
+            case mtcc_ASTNodeKind_PPDirective: prb_addStrSegment(&nodeNameBuilder, "PPDirective"); break;
+            case mtcc_ASTNodeKind_ArgList: prb_addStrSegment(&nodeNameBuilder, "ArgList"); break;
+            case mtcc_ASTNodeKind_Token: prb_addStrSegment(&nodeNameBuilder, "Token"); break;
         }
         prb_addStrSegment(&nodeNameBuilder, "%d", visNodeIndex);
         visnode->nodeName = prb_endStr(&nodeNameBuilder);
@@ -94,6 +84,7 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
         switch (visnode->astnode->kind) {
             case mtcc_ASTNodeKind_Root:
             case mtcc_ASTNodeKind_PPDirective:
+            case mtcc_ASTNodeKind_ArgList:
             case mtcc_ASTNodeKind_MacroCall: {
                 prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
             } break;

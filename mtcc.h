@@ -476,6 +476,7 @@ typedef enum mtcc_ASTNodeKind {
     mtcc_ASTNodeKind_Root,
     mtcc_ASTNodeKind_PPDirective,
     mtcc_ASTNodeKind_MacroCall,
+    mtcc_ASTNodeKind_ArgList,
     mtcc_ASTNodeKind_Token,
 } mtcc_ASTNodeKind;
 
@@ -754,6 +755,15 @@ mtcc_astBuilderLookupDefine(mtcc_PPDefineEntry* entries, mtcc_Str ident) {
     return result;
 }
 
+mtcc_PRIVATEAPI void
+mtcc_astBuilderBeginParent(mtcc_ASTBuilder* astb, mtcc_ASTNode* parent, mtcc_ASTNodeKind kind) {
+    mtcc_Token tok = parent->token;
+    parent->kind = kind;
+    parent->token = (mtcc_Token) {};
+    astb->node = parent;
+    mtcc_astBuilderPushChildToken(astb, tok);
+}
+
 mtcc_PUBLICAPI void
 mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
     // TODO(khvorov) Handle empty defines
@@ -788,15 +798,20 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
                         } break;
 
                         case mtcc_PPDefineKind_Func: {
-                            // TODO(khvorov) Right here we should figure out if we can just parse out the macro call or not
-                            // and if so then do that and push the new macro call onto the stack of nodes to expand.
-                            // If not then do what's below - i.e. expect more tokens to come to the builder.
-                            mtcc_assert(astb->nodesToExpand == 0);
-                            mtcc_Token tok = node->token;
-                            node->kind = mtcc_ASTNodeKind_MacroCall;
-                            node->token = (mtcc_Token) {};
-                            astb->node = node;
-                            mtcc_astBuilderPushChildToken(astb, tok);
+                            if (nodeToExpand->nextSibling != nodeToExpand->parent->child) {
+                                // NOTE(khvorov) We found a ident to expand but it's actually a function-like macro.
+                                // Since the ident has a next sibling, we can parse out the macro call right here and push it onto the stack
+
+                                // TODO(khvorov) Implement
+                                mtcc_assert(!"unimplemented");
+                            } else {
+                                // NOTE(khvorov) No next sibling on an ident that's a function-like macro means that we need more tokens.
+                                mtcc_assert(astb->nodesToExpand == 0);
+                                mtcc_assert(astb->nodesBeforeExpansion == 0);
+
+                                mtcc_astBuilderBeginParent(astb, node, mtcc_ASTNodeKind_MacroCall);
+                            }
+
                         } break;
                     }
                 }
@@ -804,8 +819,8 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
 
             case mtcc_ASTNodeKind_MacroCall: {
                 mtcc_assert(node->child);
-                mtcc_Str       macroName = node->child->token.str;
-                mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, macroName);
+
+                mtcc_PPDefine* define = mtcc_astBuilderLookupDefine(astb->defines, node->child->token.str);
                 mtcc_assert(define);
                 mtcc_assert(define->kind == mtcc_PPDefineKind_Func);
 
@@ -815,22 +830,21 @@ mtcc_astBuilderPPexpand(mtcc_ASTBuilder* astb, mtcc_ASTNode* node) {
                     mtcc_assert(replace->kind == mtcc_ASTNodeKind_Token);
                     mtcc_assert(replace->child == 0);
 
-                    mtcc_ASTNode* replaceCopy = mtcc_astBuilderPushChildToken(astb, replace->token);
-
                     bool     isArg = false;
                     intptr_t argIndex = 0;
                     for (intptr_t ind = 0; ind < define->func.paramCount; ind++) {
                         mtcc_Str param = define->func.params[ind];
-                        if (mtcc_streq(param, replaceCopy->token.str)) {
+                        if (mtcc_streq(param, replace->token.str)) {
                             isArg = true;
                             argIndex = ind;
                         }
                     }
 
                     if (isArg) {
-                        // TODO(khvorov) This should be replaced with a list of tokens since each argument can be
-                        // a whole expression
-                        replaceCopy->token.str = mtcc_STR("TEMP");
+                        // mtcc_assert(!"unimplemented");
+                        mtcc_astBuilderPushChildToken(astb, replace->token);
+                    } else {
+                        mtcc_astBuilderPushChildToken(astb, replace->token);
                     }
 
                     if (replace == define->func.bodyLast) {
@@ -866,10 +880,7 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
             switch (token.kind) {
                 case mtcc_TokenKind_Punctuator: {
                     if (token.str.len == 1 && token.str.ptr[0] == '#') {
-                        child->kind = mtcc_ASTNodeKind_PPDirective;
-                        child->token = (mtcc_Token) {};
-                        astb->node = child;
-                        mtcc_astBuilderPushChildToken(astb, token);
+                        mtcc_astBuilderBeginParent(astb, child, mtcc_ASTNodeKind_PPDirective);
                     }
                 } break;
 
@@ -918,10 +929,33 @@ mtcc_astBuilderNext(mtcc_ASTBuilder* astb, mtcc_Token token) {
         } break;
 
         case mtcc_ASTNodeKind_MacroCall: {
+            mtcc_ASTNode* child = mtcc_astBuilderPushChildToken(astb, token);
+            switch (token.kind) {
+                case mtcc_TokenKind_Punctuator: {
+                    if (mtcc_streq(token.str, mtcc_STR("("))) {
+                        mtcc_astBuilderBeginParent(astb, child, mtcc_ASTNodeKind_ArgList);
+                    }
+                } break;
+                default: break;
+            }
+        } break;
+
+        case mtcc_ASTNodeKind_ArgList: {
             mtcc_astBuilderPushChildToken(astb, token);
-            if (token.kind == mtcc_TokenKind_Punctuator && mtcc_streq(token.str, mtcc_STR(")"))) {
-                mtcc_astBuilderPPexpand(astb, astb->node);
-                astb->node = astb->node->parent;
+            switch (token.kind) {
+                case mtcc_TokenKind_Punctuator: {
+                    if (mtcc_streq(token.str, mtcc_STR(")"))) {
+                        astb->node = astb->node->parent;
+                        switch (astb->node->kind) {
+                            case mtcc_ASTNodeKind_MacroCall: {
+                                mtcc_astBuilderPPexpand(astb, astb->node);
+                                astb->node = astb->node->parent;
+                            } break;
+                            default: mtcc_assert(!"unreachable");
+                        }
+                    }
+                } break;
+                default: break;
             }
         } break;
 
