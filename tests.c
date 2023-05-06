@@ -75,6 +75,7 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
             case mtcc_ASTNodeKind_MacroCall: prb_addStrSegment(&nodeNameBuilder, "MacroCall"); break;
             case mtcc_ASTNodeKind_PPDirective: prb_addStrSegment(&nodeNameBuilder, "PPDirective"); break;
             case mtcc_ASTNodeKind_ArgList: prb_addStrSegment(&nodeNameBuilder, "ArgList"); break;
+            case mtcc_ASTNodeKind_Arg: prb_addStrSegment(&nodeNameBuilder, "Arg"); break;
             case mtcc_ASTNodeKind_Token: prb_addStrSegment(&nodeNameBuilder, "Token"); break;
         }
         prb_addStrSegment(&nodeNameBuilder, "%d", visNodeIndex);
@@ -85,6 +86,7 @@ treeToDot(Arena* arena, mtcc_ASTNode* root) {
             case mtcc_ASTNodeKind_Root:
             case mtcc_ASTNodeKind_PPDirective:
             case mtcc_ASTNodeKind_ArgList:
+            case mtcc_ASTNodeKind_Arg:
             case mtcc_ASTNodeKind_MacroCall: {
                 prb_addStrSegment(&lblBuilder, "%.*s", LIT(visnode->nodeName));
             } break;
@@ -686,9 +688,11 @@ test_ast(Arena* arena) {
 
         mtcc_ASTBuilder astb = test_ast_createBuilder(arena);
 
+        // TODO(khvorov) Make nested macros work - need to match paren expressions
         Str program = STR(
-            "#define LESS2(x) x < 2\n"
-            "LESS2(0)\n"
+            "#define var(x) x - 123\n"
+            "#define LESS(x, y) x < y\n"
+            "LESS(0 + 1, g)\n"
         );
 
         for (mtcc_TokenIter iter = mtcc_createTokenIter(PTM(program)); mtcc_tokenIterNext(&iter);) {
